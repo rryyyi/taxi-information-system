@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}争议提交 · FareTrace{% endblock %}
+{% block content %}
+<h1>争议提交</h1>
+<p class="hint">对某个归因项有异议时提交。系统会冻结提交瞬间的账单与证据快照，供运营复核；系统不直接裁决对错。</p>
+
+{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
+
+<form method="post" action="/disputes" class="form">
+  <label>订单号
+    <select name="order_no" id="order_no" required>
+      <option value="">请选择订单</option>
+      {% for o in orders %}
+      <option value="{{ o.order_no }}" {{ 'selected' if o.order_no == preselected_order else '' }}>{{ o.order_no }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>归因项
+    <select name="item_code" id="item_code" required>
+      <option value="">请选择归因项</option>
+      {% for o in orders %}
+        {% for item in o.item_list %}
+        <option value="{{ item.code }}" data-order="{{ o.order_no }}"
+          {{ 'selected' if item.code == preselected_item and o.order_no == preselected_order else '' }}>
+          {{ o.order_no }} · {{ item.label }}（{{ item.amount }} 元）
+        </option>
+        {% endfor %}
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>发起角色
+    <select name="initiator_role" required>
+      <option value="passenger">乘客</option>
+      <option value="driver">司机</option>
+    </select>
+  </label>
+
+  <label>争议原因
+    <textarea name="reason" rows="4" placeholder="例如：这段路我经常走，实际只绕了 0.5 公里"></textarea>
+  </label>
+
+  <button type="submit" class="primary">提交争议（冻结证据快照）</button>
+</form>
+
+<h2>最近争议</h2>
+<table class="list">
+  <thead><tr><th>#</th><th>订单</th><th>归因项</th><th>角色</th><th>状态</th><th>原因</th><th>提交时间</th></tr></thead>
+  <tbody>
+  {% for d in disputes %}
+    <tr>
+      <td>{{ d.id }}</td>
+      <td><a href="/orders/{{ d.order_no }}/bill">{{ d.order_no }}</a></td>
+      <td>{{ d.item_code }}</td>
+      <td>{{ d.role }}</td>
+      <td>{{ d.status }}</td>
+      <td>{{ d.reason }}</td>
+      <td>{{ d.created_at }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7">暂无争议记录</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var orderSelect = document.getElementById('order_no');
+var itemSelect = document.getElementById('item_code');
+function filterItems() {
+  var order = orderSelect.value;
+  Array.from(itemSelect.options).forEach(function (opt) {
+    if (!opt.value) { return; }
+    var match = !order || opt.dataset.order === order;
+    opt.hidden = !match;
+    opt.disabled = !match;
+    if (!match && opt.selected) { itemSelect.value = ''; }
+  });
+}
+orderSelect.addEventListener('change', filterItems);
+filterItems();
+</script>
+{% endblock %}

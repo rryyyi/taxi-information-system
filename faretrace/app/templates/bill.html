@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}透明账单 {{ order.order_no }} · FareTrace{% endblock %}
+{% block content %}
+{% if dispute_created %}
+<div class="banner ok">已提交争议 #{{ dispute_created }}，证据快照已冻结，可在 <a href="/disputes/new">争议提交</a> 页面查看状态。</div>
+{% endif %}
+
+<h1>透明账单 · {{ order.order_no }}</h1>
+<p class="hint">{{ order.origin_label or '-' }} → {{ order.destination_label or '-' }} · {{ order.city }}</p>
+
+{% if not attribution or not views %}
+<div class="banner warn">该订单尚未完成归因，请先完成订单并生成账单。</div>
+{% else %}
+
+{% if attribution.data_quality != 'COMPLETE' %}
+<div class="banner warn">
+  <strong>本次账单基于不完整轨迹生成。</strong>
+  轨迹缺失或有效点不足：拥堵延迟无法识别、路径偏离不予认定，部分归因项为降级计算结果。
+  数据质量：{{ attribution.data_quality }}；标记：{{ quality_flags | join('、') }}
+</div>
+{% endif %}
+{% if attribution.status == 'NEEDS_REVIEW' %}
+<div class="banner warn">残差超过阈值，归因状态为 NEEDS_REVIEW，建议运营人工复核。</div>
+{% endif %}
+
+<div class="tabs">
+  <button class="tab active" data-view="passenger">乘客视角</button>
+  <button class="tab" data-view="driver">司机视角</button>
+</div>
+
+<section id="view-passenger" class="view active">
+  <h2>{{ views.passenger.title }}</h2>
+  <p class="headline">{{ views.passenger.headline }}</p>
+  <div class="cards">
+    <div class="card"><span>预估价</span><b>{{ views.passenger.summary.quoted_price }} 元</b></div>
+    <div class="card"><span>实付价</span><b>{{ views.passenger.summary.paid_amount }} 元</b></div>
+    <div class="card {{ 'pos' if views.passenger.total_delta > 0 else 'neg' }}"><span>总差额</span><b>{{ views.passenger.total_delta }} 元</b></div>
+    <div class="card {{ 'warn' if views.passenger.residual != 0 else '' }}"><span>残差</span><b>{{ views.passenger.residual }} 元</b></div>
+  </div>
+  <p class="narrative">{{ views.passenger.summary.narrative }}</p>
+</section>
+
+<section id="view-driver" class="view">
+  <h2>{{ views.driver.title }}</h2>
+  <p class="headline">{{ views.driver.headline }}</p>
+  <div class="cards">
+    {% for key, group in views.driver.summary.groups.items() %}
+    <div class="card"><span>{{ group.label }}</span><b>{{ group.amount }} 元</b></div>
+    {% endfor %}
+  </div>
+  <p class="narrative">{{ views.driver.summary.narrative }}</p>
+  <p class="hint">{{ views.driver.summary.disclaimer }}</p>
+</section>
+
+<h2>归因项明细（每一项都可展开证据）</h2>
+<table class="items">
+  <thead>
+    <tr><th>归因项</th><th>金额</th><th>业务说明</th><th>责任归属</th><th>证据</th><th>操作</th></tr>
+  </thead>
+  <tbody>
+  {% for item in items %}
+    <tr class="{{ 'row-residual' if item.code == 'UNEXPLAINED_RESIDUAL' and item.amount != 0 else '' }}">
+      <td>{{ item.label }}<div class="code">{{ item.code }}</div></td>
+      <td class="{{ 'neg' if item.amount < 0 else ('pos' if item.amount > 0 else '') }}">{{ '%.2f'|format(item.amount) }}</td>
+      <td>{{ item.description }}</td>
+      <td>{{ item.impact_class }}</td>
+      <td>
+        <details>
+          <summary>展开 JSON</summary>
+          <pre>{{ evidence[item.code] }}</pre>
+        </details>
+      </td>
+      <td><a class="link" href="/disputes/new?order_no={{ order.order_no }}&item_code={{ item.code }}">发起争议</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="panel">
+  <h3>金额守恒校验</h3>
+  <p>归因项之和（含残差）：
+    <b>{{ views.passenger.conservation.sum_items_including_residual }} 元</b>
+    ｜ 总差额：<b>{{ views.passenger.conservation.total_delta }} 元</b>
+    ｜ 校验：<b class="{{ 'ok' if views.passenger.conservation.ok else 'neg' }}">{{ '通过（±0.01 元内）' if views.passenger.conservation.ok else '不通过' }}</b>
+  </p>
+  <p class="hint">口径：config_version {{ attribution.config_version }} · algorithm_version {{ attribution.algorithm_version }} · revision {{ attribution.revision }} · 拟合度 {{ '%.3f'|format(attribution.fit_score) if attribution.fit_score is not none else '—' }} · 平均偏离 {{ '%.1f'|format(attribution.avg_deviation_m) if attribution.avg_deviation_m is not none else '—' }} 米</p>
+</div>
+
+<div class="panel">
+  <h3>原始归因记录（可审计）</h3>
+  <details><summary>展开 evidence bundle</summary><pre>{{ evidence_bundle }}</pre></details>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.tab').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (b) { b.classList.remove('active'); });
+    document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+    btn.classList.add('active');
+    var target = document.getElementById('view-' + btn.dataset.view);
+    if (target) { target.classList.add('active'); }
+  });
+});
+</script>
+{% endblock %}
