@@ -1,14 +1,12 @@
 """订单接入与归因落库（业务编排层）。
 
-职责边界：
-    routers  -> 解析/校验 HTTP，调用本层
-    ingest   -> 事务内编排（建单、完单、归因、生成透明账单）
-    attribution -> 纯计算，不碰数据库
+沈阳口径：
+    预估档位 rule_for_time(requested_at)、实付档位 rule_for_time(completed_at)
+    由沈阳固定规则自动判定（白天/夜间），无需调用方传入。
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -27,7 +25,7 @@ from app.models import (
     TrajectoryPoint,
     utcnow,
 )
-from app.services import geo
+from app.services import geo, shenyang
 from app.services.attribution import AttributionDraft, run_attribution
 from app.services.bill_view import build_views
 from app.services.pricing import money
@@ -37,13 +35,6 @@ def d(value) -> Decimal:
     return money(value if value is not None else 0)
 
 
-def fees_to_json(items: dict | None) -> dict:
-    """JSON 列只存字符串金额，避免 Decimal 无法序列化。"""
-    if not items:
-        return {}
-    return {str(k): f"{money(v):.2f}" for k, v in items.items()}
-
-
 def get_order(session: Session, order_no: str) -> Order:
     order = session.scalars(select(Order).where(Order.order_no == order_no)).one_or_none()
     if order is None:
@@ -51,24 +42,35 @@ def get_order(session: Session, order_no: str) -> Order:
     return order
 
 
-def _require_rule(session: Session, version: str) -> PricingRule:
+def _ensure_rule(session: Session, cfg, version: str):
+    """沈阳固定档位（SY-DAY/SY-NIGHT）首次使用时写入 pricing_rules 表（审计留痕）。"""
     rule = session.get(PricingRule, version)
     if rule is None:
-        raise ValidationError(
-            f"计价规则版本 {version} 不存在，请先创建该规则或改用已存在的版本",
-            details={"rule_version": version},
+        params = shenyang.params_for(cfg, version)
+        rule = PricingRule(
+            version=version,
+            base_fare=params.base_fare,
+            per_km=money(params.per_km),
+            per_min=Decimal("0"),
+            min_fare=Decimal("0"),
+            surge_multiplier=Decimal("1.00"),
+            note=f"沈阳出租车固定计费档位 {version}（起步价/里程运价/返空/等候见 config）",
         )
+        session.add(rule)
+        session.flush()
     return rule
 
 
 def create_order(session: Session, payload, cfg) -> Order:
-    """创建订单 + 预估价快照 + 参考路径。"""
-    order_no = payload.order_no or f"FT-{utcnow().strftime('%Y%m%d%H%M%S%f')[:18]}"
+    """创建订单 + 预估价快照 + 参考路径（沈阳档位按请求时间自动判定）。"""
+    order_no = payload.order_no or f"FT-SY-{utcnow().strftime('%Y%m%d%H%M%S%f')[:18]}"
     if session.scalars(select(Order).where(Order.order_no == order_no)).one_or_none() is not None:
         raise ConflictError(f"订单号 {order_no} 已存在", details={"order_no": order_no})
 
     estimate = payload.estimate
-    rule = _require_rule(session, estimate.rule_version)
+    requested_at = payload.requested_at or utcnow()
+    est_version = shenyang.rule_for_time(cfg, requested_at)
+    _ensure_rule(session, cfg, est_version)
 
     polyline = [[float(p[0]), float(p[1])] for p in payload.reference_route.polyline]
     if not geo.is_valid_polyline(polyline):
@@ -76,12 +78,20 @@ def create_order(session: Session, payload, cfg) -> Order:
     length_m = payload.reference_route.length_m or int(round(geo.polyline_length_m(polyline)))
     if length_m <= 0:
         raise ValidationError("参考路径长度必须大于 0")
+    # 节点名（沈阳道路锚点）解析为坐标，供等候/绕路事件定位与地图展示
+    nodes_payload: list[dict] = []
+    for name in payload.reference_route.node_names or []:
+        if name in shenyang.ANCHORS:
+            lat, lng = shenyang.ANCHORS[name]
+        else:
+            lat, lng = polyline[0]
+        nodes_payload.append({"name": name, "lat": lat, "lng": lng})
 
     order = Order(
         order_no=order_no,
-        city=payload.city,
+        city="沈阳",
         status="CREATED",
-        requested_at=payload.requested_at or utcnow(),
+        requested_at=requested_at,
         origin_label=payload.origin_label,
         destination_label=payload.destination_label,
         created_at=utcnow(),
@@ -90,13 +100,14 @@ def create_order(session: Session, payload, cfg) -> Order:
         quoted_price=d(estimate.quoted_price),
         est_distance_m=int(estimate.est_distance_m),
         est_duration_s=int(estimate.est_duration_s),
-        rule_version=rule.version,
-        surge_multiplier=Decimal(str(estimate.surge_multiplier)),
-        surcharges_json=fees_to_json(estimate.surcharges),
-        discounts_json=fees_to_json(estimate.discounts),
+        rule_version=est_version,
+        surge_multiplier=Decimal("1.00"),
+        surcharges_json={},
+        discounts_json={},
     )
     order.reference_route = ReferenceRoute(
         polyline_json=polyline,
+        nodes_json=nodes_payload,
         length_m=int(length_m),
         est_duration_s=int(estimate.est_duration_s),
         free_flow_speed_kmh=int(payload.reference_route.free_flow_speed_kmh),
@@ -107,7 +118,7 @@ def create_order(session: Session, payload, cfg) -> Order:
 
 
 def complete_order(session: Session, order: Order, payload, cfg) -> Attribution:
-    """完成订单：写入实付账单 + 轨迹，触发归因，生成透明账单。"""
+    """完成订单：写入实付账单 + 轨迹，触发归因，生成透明账单与事件。"""
     if order.bill is not None:
         raise ConflictError(
             f"订单 {order.order_no} 已完成，如需重算请调用 /attribute 接口",
@@ -115,20 +126,25 @@ def complete_order(session: Session, order: Order, payload, cfg) -> Attribution:
         )
 
     bill_payload = payload.bill
-    rule = _require_rule(session, bill_payload.rule_version)
+    completed_at = payload.completed_at or utcnow()
+    bill_version = shenyang.rule_for_time(cfg, completed_at)
+    _ensure_rule(session, cfg, bill_version)
+    bill_params = shenyang.params_for(cfg, bill_version)
 
     order.bill = Bill(
         paid_amount=d(bill_payload.paid_amount),
         actual_distance_m=int(bill_payload.actual_distance_m),
         actual_duration_s=int(bill_payload.actual_duration_s),
-        base_fare=d(bill_payload.base_fare),
-        distance_fare=d(bill_payload.distance_fare),
-        time_fare=d(bill_payload.time_fare),
-        surge_multiplier=Decimal(str(bill_payload.surge_multiplier)),
-        surcharges_json=fees_to_json(bill_payload.surcharges),
-        other_fees_json=fees_to_json(bill_payload.other_fees),
-        discounts_json=fees_to_json(bill_payload.discounts),
-        rule_version=rule.version,
+        base_fare=bill_params.base_fare,
+        distance_fare=money(
+            shenyang.mileage_fare(bill_params, bill_payload.actual_distance_m)
+        ),
+        time_fare=Decimal("0"),
+        surge_multiplier=Decimal("1.00"),
+        surcharges_json={},
+        other_fees_json={},
+        discounts_json={},
+        rule_version=bill_version,
     )
     for i, point in enumerate(payload.trajectory or []):
         order.points.append(
@@ -140,7 +156,7 @@ def complete_order(session: Session, order: Order, payload, cfg) -> Attribution:
                 speed_mps=None if point.speed_mps is None else float(point.speed_mps),
             )
         )
-    order.completed_at = payload.completed_at or utcnow()
+    order.completed_at = completed_at
     order.status = "COMPLETED"
     session.flush()
 
@@ -149,7 +165,7 @@ def complete_order(session: Session, order: Order, payload, cfg) -> Attribution:
 
 
 def persist_attribution(session: Session, order: Order, draft: AttributionDraft, cfg) -> Attribution:
-    """把归因结果落库（同订单幂等更新，revision+1），并生成双视角透明账单。"""
+    """归因结果落库（幂等更新，revision+1）：归因项 + 等候/绕路事件 + 双视角账单。"""
     attribution = order.attribution
     if attribution is None:
         attribution = Attribution(order_id=order.id, revision=0)
@@ -170,6 +186,8 @@ def persist_attribution(session: Session, order: Order, draft: AttributionDraft,
     attribution.config_version = draft.config_version or cfg.config_version
     attribution.revision = int(attribution.revision or 0) + 1
     attribution.computed_at = utcnow()
+    attribution.wait_events = []
+    attribution.detour_events = []
     session.flush()
 
     existing = {item.code: item for item in attribution.items}
@@ -185,9 +203,51 @@ def persist_attribution(session: Session, order: Order, draft: AttributionDraft,
         item.impact_class = draft_item.impact_class
         item.sort_order = draft_item.sort_order
     session.flush()
-    session.refresh(attribution)
+    session.refresh(attribution)  # 刷新关系集合（同会话内新增 items 后需重载）
 
-    passenger_view, driver_view = build_views(order, attribution, attribution.items)
+    from app.models import DetourEvent, WaitEvent
+
+    for e in draft.wait_events:
+        attribution.wait_events.append(
+            WaitEvent(
+                order_id=order.id,
+                attribution_id=attribution.id,
+                location=e.location,
+                t_start=e.t_start,
+                t_end=e.t_end,
+                duration_s=e.duration_s,
+                avg_speed_kmh=e.avg_speed_kmh,
+                peak_seconds=e.peak_seconds,
+                offpeak_seconds=e.offpeak_seconds,
+                peak_label=e.peak_label,
+                fee=d(e.fee),
+                lat=e.lat,
+                lng=e.lng,
+                evidence_json=e.evidence,
+            )
+        )
+    for e in draft.detour_events:
+        attribution.detour_events.append(
+            DetourEvent(
+                order_id=order.id,
+                attribution_id=attribution.id,
+                entry_name=e.entry_name,
+                exit_name=e.exit_name,
+                entry_lat=e.entry_lat,
+                entry_lng=e.entry_lng,
+                exit_lat=e.exit_lat,
+                exit_lng=e.exit_lng,
+                ref_distance_m=e.ref_distance_m,
+                actual_distance_m=e.actual_distance_m,
+                extra_distance_m=e.extra_distance_m,
+                fee=d(e.fee),
+                path_json=e.path,
+                evidence_json=e.evidence,
+            )
+        )
+    session.flush()
+
+    passenger_view, driver_view = build_views(order, attribution, attribution.items, cfg)
     if attribution.transparent_bill is None:
         attribution.transparent_bill = TransparentBill(
             attribution_id=attribution.id,

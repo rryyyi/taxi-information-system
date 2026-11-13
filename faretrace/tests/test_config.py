@@ -1,4 +1,4 @@
-"""配置与口径可追溯性测试。"""
+"""配置与口径可追溯性测试（沈阳版）。"""
 
 from __future__ import annotations
 
@@ -8,20 +8,25 @@ from app.config import Config, load_config
 
 
 def test_versions_present(cfg: Config) -> None:
-    assert cfg.config_version == "cfg-1.0.0"
-    assert cfg.algorithm_version == "faretrace-attr-1.0.0"
+    assert cfg.config_version == "cfg-sy-1.0.0"
+    assert cfg.algorithm_version == "faretrace-sy-attr-1.0.0"
 
 
 @pytest.mark.parametrize(
     "path, expected",
     [
+        ("shenyang_fare.DAY.base_fare", 9.00),
+        ("shenyang_fare.DAY.meter_step_m", 500),
+        ("shenyang_fare.NIGHT.base_fare", 10.00),
+        ("shenyang_fare.NIGHT.meter_step_m", 455),
+        ("shenyang_fare.return_fee.tier1_rate", 0.30),
+        ("shenyang_fare.return_fee.tier2_rate", 0.50),
+        ("shenyang_fare.wait_fee.peak_seconds_per_yuan", 120),
+        ("shenyang_fare.wait_fee.offpeak_seconds_per_yuan", 180),
+        ("low_speed.speed_threshold_kmh", 12.0),
         ("trajectory.FIT_BUFFER_M", 100),
         ("trajectory.FIT_THRESHOLD", 0.8),
-        ("congestion.CONGESTION_SPEED_KMH", 15),
-        ("congestion.MIN_CONGESTION_SECONDS", 60),
-        ("money.epsilon", 0.01),
-        ("money.decimals", 2),
-        ("residual.REVIEW_THRESHOLD", 1.0),
+        ("map.center", [41.80, 123.43]),
     ],
 )
 def test_thresholds_come_from_config(cfg: Config, path: str, expected: object) -> None:

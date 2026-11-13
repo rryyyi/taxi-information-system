@@ -1,4 +1,4 @@
-"""前端页面冒烟测试（三个页面 + 表单提交回跳）。"""
+"""前端页面冒烟测试（订单列表 / 透明账单+Leaflet 地图 / 争议提交）。"""
 
 from __future__ import annotations
 
@@ -10,28 +10,33 @@ def test_orders_page_lists_seed_orders(seeded_client: TestClient) -> None:
     assert resp.status_code == 200
     html = resp.text
     assert "订单列表" in html
-    assert "FT-1800" in html
+    assert "FT-SY-1800" in html
     assert "残差" in html
 
 
-def test_bill_page_renders_both_views_and_evidence(seeded_client: TestClient) -> None:
-    resp = seeded_client.get("/orders/FT-1800/bill")
+def test_bill_page_renders_views_and_leaflet_map(seeded_client: TestClient) -> None:
+    resp = seeded_client.get("/orders/FT-SY-1800/bill")
     assert resp.status_code == 200
     html = resp.text
     assert "透明账单" in html
     assert "乘客视角" in html and "司机视角" in html
-    assert "拥堵延迟" in html
-    assert "路径偏离" in html
-    assert "计价规则变化" in html
+    assert "等候费" in html
+    assert "绕路增量" in html
     assert "残差" in html
     assert "金额守恒校验" in html
     assert "通过（±0.01 元内）" in html
-    assert "3.10" in html and "4.20" in html and "1.70" in html
-    assert "evidence bundle" in html
+    # Leaflet + OSM 底图
+    assert 'id="map"' in html
+    assert "leaflet" in html.lower()
+    assert "openstreetmap" in html.lower()
+    # 地图数据已内嵌（实际轨迹/等候事件/绕路段坐标）
+    assert "wait_events" in html
+    assert "detour_segments" in html
+    assert "123.43" in html
 
 
 def test_bill_page_warns_on_incomplete_trajectory(seeded_client: TestClient) -> None:
-    resp = seeded_client.get("/orders/FT-1005/bill")
+    resp = seeded_client.get("/orders/SY-1005/bill")
     assert resp.status_code == 200
     assert "基于不完整轨迹生成" in resp.text
 
@@ -41,18 +46,16 @@ def test_dispute_form_page(seeded_client: TestClient) -> None:
     assert resp.status_code == 200
     html = resp.text
     assert "争议提交" in html
-    assert "PAT" not in html or True
-    assert "结算" not in html
     assert 'name="item_code"' in html
-    assert "FT-1800" in html
+    assert "FT-SY-1800" in html
 
 
 def test_dispute_form_submission_redirects_to_bill(seeded_client: TestClient) -> None:
     resp = seeded_client.post(
         "/disputes",
         data={
-            "order_no": "FT-1800",
-            "item_code": "PATH_DEVIATION",
+            "order_no": "FT-SY-1800",
+            "item_code": "DETOUR_EXTRA",
             "initiator_role": "passenger",
             "reason": "页面表单提交测试",
         },

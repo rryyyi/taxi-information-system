@@ -87,3 +87,49 @@ def get_attribution(order_no: str, session: Session = Depends(get_session)) -> d
     if order.attribution is None:
         raise ConflictError("订单尚未完成归因", details={"order_no": order_no})
     return attribution_detail(order.attribution)
+
+
+@router.get("/orders/{order_no}/events")
+def get_events(order_no: str, session: Session = Depends(get_session)) -> dict:
+    """等候事件与绕路事件列表（含地图坐标，供 Leaflet 定位）。"""
+    order = ingest.get_order(session, order_no)
+    attribution = order.attribution
+    if attribution is None:
+        raise ConflictError("订单尚未完成归因", details={"order_no": order_no})
+    return {
+        "order_no": order.order_no,
+        "data_quality": attribution.data_quality,
+        "wait_events": [
+            {
+                "id": e.id,
+                "location": e.location,
+                "t_start": e.t_start.isoformat() if e.t_start else None,
+                "t_end": e.t_end.isoformat() if e.t_end else None,
+                "duration_s": float(e.duration_s),
+                "avg_speed_kmh": float(e.avg_speed_kmh),
+                "peak_seconds": float(e.peak_seconds),
+                "offpeak_seconds": float(e.offpeak_seconds),
+                "peak_label": e.peak_label,
+                "fee": f"{e.fee:.2f}",
+                "coordinate": {"lat": float(e.lat), "lng": float(e.lng)},
+                "evidence": e.evidence_json,
+            }
+            for e in attribution.wait_events
+        ],
+        "detour_events": [
+            {
+                "id": e.id,
+                "entry_name": e.entry_name,
+                "exit_name": e.exit_name,
+                "entry": {"lat": float(e.entry_lat), "lng": float(e.entry_lng)},
+                "exit": {"lat": float(e.exit_lat), "lng": float(e.exit_lng)},
+                "ref_distance_m": float(e.ref_distance_m),
+                "actual_distance_m": float(e.actual_distance_m),
+                "extra_distance_m": float(e.extra_distance_m),
+                "fee": f"{e.fee:.2f}",
+                "path": [list(p) for p in (e.path_json or [])],
+                "evidence": e.evidence_json,
+            }
+            for e in attribution.detour_events
+        ],
+    }

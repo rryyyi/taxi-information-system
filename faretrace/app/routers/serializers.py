@@ -17,7 +17,7 @@ def yuan(value: Decimal | None) -> str | None:
 def order_summary(order: Order) -> dict:
     attribution = order.attribution
     est, bill, ref = order.estimate, order.bill, order.reference_route
-    veh_quality = attribution.data_quality if attribution else None
+    quality = attribution.data_quality if attribution else None
     return {
         "order_no": order.order_no,
         "city": order.city,
@@ -31,11 +31,13 @@ def order_summary(order: Order) -> dict:
         "total_delta": yuan(attribution.total_delta) if attribution else None,
         "residual": yuan(attribution.residual) if attribution else None,
         "fit_score": None if not attribution or attribution.fit_score is None else float(attribution.fit_score),
-        "data_quality": veh_quality,
+        "data_quality": quality,
         "attribution_status": attribution.status if attribution else None,
         "attribution_id": attribution.id if attribution else None,
         "reference_route_length_m": ref.length_m if ref else None,
         "trajectory_point_count": len(order.points),
+        "wait_event_count": len(attribution.wait_events) if attribution else 0,
+        "detour_event_count": len(attribution.detour_events) if attribution else 0,
     }
 
 
@@ -74,6 +76,7 @@ def order_detail(order: Order) -> dict:
                 "est_duration_s": order.reference_route.est_duration_s,
                 "point_count": len(order.reference_route.polyline_json),
                 "polyline": order.reference_route.polyline_json,
+                "nodes": order.reference_route.nodes_json,
             }
             if order.reference_route
             else None,

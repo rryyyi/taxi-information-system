@@ -1,25 +1,38 @@
-# FareTrace 网约车透明账单归因系统
+# FareTrace 沈阳出租车透明账单归因系统
 
-> 课程项目（MIS 实验室 · 2026）。订单完成后的**费用差额归因层**：输入预估价快照、实付账单、实际轨迹与参考路径，
-> 输出一份可解释、可审计、双向透明的账单 —— 不是"更准的预估价"，而是"每一分钱差额配证据"。
+> 课程项目（MIS 实验室 · 2026）。订单完成后的**费用差额归因层**：以**沈阳出租车现行计价规则为固定基准**，
+> 输入预估价快照、实付账单、实际轨迹与参考路径，输出一份可解释、可审计、双向透明的账单——
+> 堵车的钱拆到具体路口和等候秒数，绕路的钱拆到具体偏离路段和多出的米数，每一项都能在 Leaflet 沈阳地图上定位。
 >
-> ⚠️ 全部订单/轨迹/账单为**模拟数据**，不接入真实支付与地图 API，不产生真实扣款。
+> ⚠️ 全部订单/轨迹/账单为**模拟数据**（沈阳真实道路锚点 + 合成轨迹），不接入真实支付与付费地图 API，不产生真实扣款。
 
 ## 快速开始
 
 ```bash
 cd faretrace
-pip install -r requirements.txt      # 若依赖已装可跳过
+pip install -r requirements.txt      # 依赖已装可跳过
 
-python -m pytest -q                  # 全部自动化测试（73 项）
-python seed.py                       # 重置并灌入 6 笔种子订单（可选，服务启动时会自动灌）
+python -m pytest -q                  # 全部自动化测试（83 项）
+python seed.py                       # 重置并灌入 7 笔沈阳种子订单（服务启动时也会自动灌）
 python -m uvicorn app.main:app --reload
 # 浏览器打开 http://127.0.0.1:8000/orders
 ```
 
-- 三个页面：`/orders`（订单列表）、`/orders/FT-1800/bill`（透明账单详情）、`/disputes/new`（争议提交）
+- 三个页面：`/orders`（订单列表）、`/orders/FT-SY-1800/bill`（透明账单 + Leaflet 地图）、`/disputes/new`（争议提交）
 - API 文档（Swagger）：`http://127.0.0.1:8000/docs`
-- 生活化验收样例：`FT-1800`（预估价 18.00 元 → 实付 27.00 元）
+- 生活化验收样例：`FT-SY-1800`（沈阳晚高峰，预估价 18.00 元 → 实付 27.00 元）
+
+## 沈阳固定计费基准（不可运行时修改，见 config/attribution.yaml）
+
+| 项目 | 规则 |
+|---|---|
+| 起步价（白天） | 9 元 / 3 公里 |
+| 里程运价 | 超 3 公里后每 500 米 1 元（≈2 元/公里） |
+| 夜间/夏季冷气 | 22:00—次日 6:00：起步价 10 元/3 公里，每 455 米 1 元 |
+| 阶梯返空费 | 15–20 公里部分按里程运价加收 30%；20 公里以上部分加收 50% |
+| 低速等候费（时距并计） | 时速 <12 km/h 时里程费照常，等候费另收：高峰（07:00—09:00、16:30—18:30）累计每 2 分钟 1 元（120 秒/元）；平峰累计每 3 分钟 1 元（180 秒/元），按高峰/平峰分段结算 |
+
+规则字段全部外置于 `config/attribution.yaml`（`shenyang_fare` 节），经 `GET /api/config` 只读可查，归因记录落库 `config_version` 可追溯；日常归因中"计价规则变化"恒为 0 元。
 
 ## 目录结构
 
@@ -29,85 +42,100 @@ faretrace/
 │   ├── main.py            # 应用装配、统一错误结构、启动建表+种子
 │   ├── config.py db.py models.py schemas.py enums.py errors.py
 │   ├── routers/           # orders / bills / disputes / meta / pages / serializers
-│   ├── services/          # geo(投影) trajectory(拟合/拥堵) pricing(计价) attribution(★归因) ...
-│   ├── templates/ static/ # 三个页面（Jinja2 + 原生 JS）
-├── config/attribution.yaml  # 阈值与规则版本（唯一口径来源）
+│   ├── services/
+│   │   ├── shenyang.py    # ★沈阳固定计费基准（档位/里程/返空/等候费/高峰窗口）
+│   │   ├── roadnet.py     # ★沈阳真实道路锚点 + 绕行几何 + 轨迹合成
+│   │   ├── trajectory.py  # 去重/剔异常/拟合度/低速段/偏离段
+│   │   ├── attribution.py # ★三维偏差归因 → 七归因项 + 等候/绕路事件 + 残差
+│   │   ├── bill_view.py   # 双视角投影 + Leaflet 地图数据
+│   │   └── ingest.py disputes.py geo.py pricing.py seed.py
+│   └── templates/ static/ # 三个页面（账单页内嵌 Leaflet 地图）
+├── config/attribution.yaml  # 沈阳计费基准 + 阈值（唯一口径来源）
 ├── seed.py                  # 种子脚本
-├── tests/                   # 73 项 pytest
-├── docs/                    # 计划、手册转录、后续设计文档
+├── tests/                   # 83 项 pytest
+├── docs/                    # 需求可行性/系统设计/用例/展示脚本/引用/验收清单
 ├── ASSUMPTIONS.md TEAM_ROLES.md
 └── requirements.txt pytest.ini
 ```
 
-## 核心算法（规则化三维偏差分解）
+## 归因项（七个，全部恒输出，含 0.00 项）
 
-- ΔD = 实际里程 − 预估里程；ΔT = 实际时长 − 预估时长；ΔP = 规则/杂费字段差异（不做抽象系数）
-- 6 个归因项固定输出：`PATH_DEVIATION`、`CONGESTION_DELAY`、`DRIVER_DELAY`、`PRICING_RULE_CHANGE`、`TOLL_OR_FEE`、`UNEXPLAINED_RESIDUAL`
-- 路径偏离仅在 `fit_score < FIT_THRESHOLD(0.8)` 时计价（`FIT_BUFFER_M=100`）；高拟合度时金额 0 但保留拟合度证据
-- 拥堵：速度 < `CONGESTION_SPEED_KMH=15` 且连续 ≥ `MIN_CONGESTION_SECONDS=60` 秒
-- 残差 = 总差额 − 其余五项，`|残差| ≤ 0.01` 元归零；**任何情况不并入其它项**，超 1.00 元标记 `NEEDS_REVIEW`
+| 归因项 | 说明 | 证据要点 |
+|---|---|---|
+| `WAIT_FEE` 等候费（堵车/低速） | 每条连续低速段（<12km/h）= 一次等候事件，高峰秒/120 + 平峰秒/180 | 路口名、起止时间、持续秒数、平均速度、是否高峰、坐标 |
+| `DETOUR_EXTRA` 绕路增量 | 每段偏离参考路径的多行驶里程 × 里程运价 | 起终点道路名、参考/实际/多出米数、坐标、偏离段轨迹 |
+| `MILEAGE_EXTRA` 里程费增量 | 参考路径上计费里程较预估增减（固定费率） | ΔD、费率、取整规则 |
+| `RETURN_FEE` 阶梯返空费 | >15km 按阶梯规则（账单−预估） | 里程、档位比例 |
+| `NIGHT_SURCHARGE` 夜间/冷气差价 | 跨 22:00 换档差异 | 档位字段对比 |
+| `PRICING_RULE_CHANGE` | 沈阳基准固定，**恒为 0 元** | 规则字段 |
+| `UNEXPLAINED_RESIDUAL` 残差 | \|残差\|≤0.01 元归零；>0.01 元**必须"待核查"** | 差额来源分解 |
+
+金额守恒：`Σ七项 = 实付 − 预估`（±0.01 元），残差永不并入堵车/绕路项凑平。
 
 ## 接口一览与 curl 示例
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/health` | 健康检查（含 config_version） |
-| GET | `/api/config` | 只读：阈值、规则版本、归因项编码 |
-| POST | `/api/orders` | 创建订单（写预估价快照 + 参考路径） |
-| POST | `/api/orders/{order_no}/complete` | 完成订单（写账单 + 轨迹并触发归因） |
-| POST | `/api/orders/{order_no}/attribute` | 重算归因（revision+1，争议快照不受影响） |
-| GET | `/api/orders` | 订单列表 |
-| GET | `/api/orders/{order_no}` | 订单原始数据 |
-| GET | `/api/orders/{order_no}/bill?view=passenger\|driver\|both` | 透明账单（双视角） |
-| GET | `/api/orders/{order_no}/attribution` | 原始归因记录 + 证据 bundle |
-| POST | `/api/disputes` | 提交争议（冻结证据快照） |
-| GET | `/api/disputes` / `/api/disputes/{id}` | 争议列表 / 详情（含快照与证据绑定） |
-| PATCH | `/api/disputes/{id}` | 运营复核流转 OPEN→REVIEWING→RESOLVED/REJECTED |
-| POST | `/api/demo/reset` | 重置演示库并重灌 6 笔种子 |
+| GET | `/api/config` | 只读：沈阳计费基准 + 阈值 + 归因项编码 |
+| POST | `/api/orders` | 创建订单（预估价快照 + 参考路径；档位按时间自动判定） |
+| POST | `/api/orders/{no}/complete` | 完成订单（账单 + 轨迹 → 归因 → 透明账单 + 事件） |
+| POST | `/api/orders/{no}/attribute` | 重算归因（revision+1，争议快照不受影响） |
+| GET | `/api/orders` / `/api/orders/{no}` | 订单列表 / 原始数据 |
+| GET | `/api/orders/{no}/bill?view=passenger\|driver\|both` | 双视角透明账单（含地图数据） |
+| GET | `/api/orders/{no}/attribution` | 原始归因记录 + 证据 bundle |
+| GET | `/api/orders/{no}/events` | **等候事件与绕路事件列表（含地图坐标）** |
+| POST/GET/PATCH | `/api/disputes…` | 争议提交（冻结证据快照）/ 查询 / 复核流转 |
+| POST | `/api/demo/reset` | 重置演示库并重灌 7 笔种子 |
 
 ```bash
-# 1) 健康检查 / 只读配置
+# 1) 健康检查 / 沈阳计费规则
 curl http://127.0.0.1:8000/api/health
 curl http://127.0.0.1:8000/api/config
 
-# 2) 创建订单（预估价快照 + 参考路径；rule_version 必须已存在）
+# 2) 创建订单（预估价快照 + 参考路径，档位按 requested_at 自动判定）
 curl -X POST http://127.0.0.1:8000/api/orders -H "Content-Type: application/json" -d '{
-  "order_no": "FT-CURL-1",
-  "city": "演示城市",
-  "estimate": {"quoted_price": "21.00", "est_distance_m": 5000, "est_duration_s": 900,
-               "rule_version": "R-EST-1", "surge_multiplier": "1.00"},
-  "reference_route": {"polyline": [[30.0,120.0],[30.0,120.05]], "length_m": 5000}
+  "order_no": "SY-CURL-1",
+  "origin_label": "市府广场", "destination_label": "浑河桥南",
+  "requested_at": "2026-03-06T17:00:00",
+  "estimate": {"quoted_price": "16.00", "est_distance_m": 6500, "est_duration_s": 590},
+  "reference_route": {
+    "polyline": [[41.8015,123.4352],[41.742,123.4362]],
+    "length_m": 6500,
+    "node_names": ["市府广场", "浑河桥南"]
+  }
 }'
 
-# 3) 完成订单（账单 + 轨迹），自动归因并生成透明账单
-curl -X POST http://127.0.0.1:8000/api/orders/FT-CURL-1/complete -H "Content-Type: application/json" -d '{
-  "bill": {"paid_amount": "23.50", "actual_distance_m": 5000, "actual_duration_s": 1400,
-           "base_fare": "5.00", "distance_fare": "10.00", "time_fare": "8.50",
-           "rule_version": "R-EST-1"},
+# 3) 完成订单（账单 + 轨迹），自动归因并生成透明账单与等候/绕路事件
+curl -X POST http://127.0.0.1:8000/api/orders/SY-CURL-1/complete -H "Content-Type: application/json" -d '{
+  "bill": {"paid_amount": "17.00", "actual_distance_m": 6500, "actual_duration_s": 590},
   "trajectory": [
-    {"seq":0,"ts":"2026-03-02T09:00:00Z","lat":30.0,"lng":120.0,"speed_mps":6.0},
-    {"seq":1,"ts":"2026-03-02T09:05:00Z","lat":30.0,"lng":120.0125,"speed_mps":6.0},
-    {"seq":2,"ts":"2026-03-02T09:10:00Z","lat":30.0,"lng":120.025,"speed_mps":6.0}
-  ]
+    {"seq":0,"ts":"2026-03-06T17:00:00","lat":41.8015,"lng":123.4352,"speed_mps":0.0},
+    {"seq":1,"ts":"2026-03-06T17:02:00","lat":41.8015,"lng":123.4352,"speed_mps":0.0},
+    {"seq":2,"ts":"2026-03-06T17:02:15","lat":41.8005,"lng":123.4355,"speed_mps":11.0},
+    {"seq":3,"ts":"2026-03-06T17:09:50","lat":41.742,"lng":123.4362,"speed_mps":11.0}
+  ],
+  "completed_at": "2026-03-06T17:09:50"
 }'
 
-# 4) 查询透明账单（乘客 + 司机）
-curl "http://127.0.0.1:8000/api/orders/FT-1800/bill"
-curl "http://127.0.0.1:8000/api/orders/FT-1800/bill?view=driver"
+# 4) 查询透明账单（含 Leaflet 地图数据）与等候/绕路事件
+curl "http://127.0.0.1:8000/api/orders/FT-SY-1800/bill"
+curl "http://127.0.0.1:8000/api/orders/FT-SY-1800/bill?view=driver"
+curl "http://127.0.0.1:8000/api/orders/FT-SY-1800/events"
 
 # 5) 原始归因记录（审计）
-curl http://127.0.0.1:8000/api/orders/FT-1800/attribution
+curl http://127.0.0.1:8000/api/orders/FT-SY-1800/attribution
 
-# 6) 提交争议并查询
+# 6) 提交争议并查询（快照冻结）
 curl -X POST http://127.0.0.1:8000/api/disputes -H "Content-Type: application/json" -d '{
-  "order_no": "FT-1800", "item_code": "PATH_DEVIATION",
-  "initiator_role": "passenger", "reason": "这段路只绕了 0.5 公里"
+  "order_no": "FT-SY-1800", "item_code": "DETOUR_EXTRA",
+  "initiator_role": "passenger", "reason": "文艺路到科普路不该多走 1.5 公里"
 }'
 curl http://127.0.0.1:8000/api/disputes
 
 # 7) 运营复核
 curl -X PATCH http://127.0.0.1:8000/api/disputes/1 -H "Content-Type: application/json" \
-  -d '{"status":"REVIEWING","reviewed_by":"运营-张"}'
+  -d '{"status":"REVIEWING","reviewed_by":"运营-沈阳"}'
 
 # 8) 演示复位
 curl -X POST http://127.0.0.1:8000/api/demo/reset
@@ -119,29 +147,27 @@ curl -X POST http://127.0.0.1:8000/api/demo/reset
 {"error": {"code": "NOT_FOUND", "message": "订单 NOT-EXISTS 不存在", "details": {"order_no": "NOT-EXISTS"}}}
 ```
 
-## 种子数据（6 笔，全部合成）
+## 种子数据（7 笔沈阳模拟订单）
 
-| 订单 | 场景 | 预估价 → 实付 | 归因要点 | 数据质量 |
-|---|---|---|---|---|
-| FT-1001 | 正常订单 | 21.00 → 20.60 | 首单优惠 −0.40，路径/拥堵均 0 | COMPLETE |
-| FT-1002 | 拥堵延迟 | 20.00 → 23.50 | 拥堵 600 秒 → +3.50 | COMPLETE |
-| FT-1003 | 路径偏离 | 19.50 → 25.40 | 路径 +3.60、拥堵 +1.75、过路费 +0.55 | COMPLETE |
-| FT-1004 | 计价规则变化 | 24.80 → 28.60 | 起步价/里程单价上调 +3.80 | COMPLETE |
-| FT-1005 | 轨迹缺失 + 残差 | 21.00 → 23.30 | 司机延迟 +2.10、残差 0.20（降级） | INCOMPLETE |
-| **FT-1800** | **生活化验收** | **18.00 → 27.00** | **拥堵 4.20 + 路径 3.10 + 规则 1.70 + 残差 0.00 = 9.00** | COMPLETE |
+| 订单 | 场景 | 预估→实付 | 归因要点 |
+|---|---|---|---|
+| SY-1001 | 正常（起步价区间） | 9.00→9.00 | 全部归因项 0，拟合度 1.0 |
+| SY-1002 | 晚高峰拥堵 | 16.00→19.08 | 3 处路口等候（160/120/90 秒高峰）→ 等候费 3.08 |
+| SY-1003 | 绕路 | 16.00→18.00 | 文艺路绕行三好街多走 380 米 → 绕路增量 0.76 |
+| SY-1004 | 跨夜间时段 | 10.00→11.50 | 夜间档差价 1.00 + 90 秒平峰等候 0.50 |
+| SY-1005 | 含残差（轨迹缺失） | 13.00→14.50 | 残差 1.50 → **待核查**（NEEDS_REVIEW） |
+| SY-1006 | 返空费 | 33.00→35.49 | 沈阳北站→苏家屯 >15 公里触发阶梯返空 |
+| **FT-SY-1800** | **生活化验收** | **18.00→27.00** | **等候费 +6.00（4×180 秒高峰）+ 绕路增量 +3.00（1.5 公里）+ 残差 0** |
+
+地图：账单页使用 Leaflet + OpenStreetMap 瓦片（免费、无需 Key），中心 (41.80°N, 123.43°E)；
+蓝线=实际轨迹、灰虚线=参考路径、红色高亮=绕路偏离段、橙色圆点=等候路口（弹窗显示秒数与费用）。
 
 ## 测试
 
 ```bash
-python -m pytest -q                                  # 全部
-python -m pytest tests/test_attribution.py -q        # 守恒 / 场景 / 随机订单
-python -m pytest tests/test_api.py -q                # 接口与争议快照冻结
-python -m pytest tests/test_frontend.py -q           # 三页面冒烟
+python -m pytest -q                            # 全部 83 项
+python -m pytest tests/test_shenyang.py -q     # 沈阳计费基准
+python -m pytest tests/test_attribution.py -q  # 守恒/事件/返空/夜间/残差
+python -m pytest tests/test_api.py -q          # 接口与端到端
+python -m pytest tests/test_frontend.py -q     # 三页面 + Leaflet 冒烟
 ```
-
-覆盖：金额守恒（±0.01）、高拟合度无路径偏离、低拟合度有路径偏离、连续低速判拥堵、轨迹缺失降级、规则/杂费归因、残差显式记录、争议证据绑定与冻结、端到端链路、统一错误结构。
-
-## 口径可追溯
-
-`config/attribution.yaml` 是唯一口径来源（`config_version`），归因记录同时保存 `config_version`、`algorithm_version`、`revision`、
-阈值快照与数据集质量标记；`GET /api/config` 可只读核对。

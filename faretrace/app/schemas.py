@@ -1,6 +1,7 @@
 """HTTP 入参模型（Pydantic v2）。
 
-单位约定：金额=元（2 位小数）、距离=米、时间=秒。
+单位约定：金额=元（2 位小数）、距离=米、时间=秒、时间为沈阳本地时间（UTC+8）。
+计价档位（白天/夜间）由沈阳固定规则按时间自动判定，无需调用方传入。
 """
 
 from __future__ import annotations
@@ -13,27 +14,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Amount = Annotated[Decimal, Field(ge=0, max_digits=10, decimal_places=2)]
 SignedAmount = Annotated[Decimal, Field(max_digits=10, decimal_places=2)]
-PositiveInt = Annotated[int, Field(gt=0)]
 
 
 class EstimateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     quoted_price: Amount
-    est_distance_m: PositiveInt
-    est_duration_s: PositiveInt
-    rule_version: str
-    surge_multiplier: Annotated[Decimal, Field(ge=0, max_digits=5, decimal_places=2)] = Decimal("1.00")
-    surcharges: dict[str, SignedAmount] = Field(default_factory=dict)
-    discounts: dict[str, Amount] = Field(default_factory=dict)
+    est_distance_m: Annotated[int, Field(gt=0)]
+    est_duration_s: Annotated[int, Field(gt=0)]
 
 
 class ReferenceRouteIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     polyline: list[list[float]] = Field(min_length=2)
-    length_m: PositiveInt | None = None
-    free_flow_speed_kmh: PositiveInt = 40
+    length_m: Annotated[int, Field(gt=0)] | None = None
+    free_flow_speed_kmh: Annotated[int, Field(gt=0)] = 40
+    node_names: list[str] = Field(default_factory=list, description="沈阳道路锚点名（可选，供事件定位）")
 
     @field_validator("polyline")
     @classmethod
@@ -51,7 +48,6 @@ class OrderCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     order_no: str | None = Field(default=None, max_length=32)
-    city: str = Field(default="演示城市", max_length=32)
     requested_at: datetime | None = None
     origin_label: str | None = None
     destination_label: str | None = None
@@ -65,14 +61,6 @@ class BillIn(BaseModel):
     paid_amount: Amount
     actual_distance_m: int = Field(ge=0)
     actual_duration_s: int = Field(ge=0)
-    base_fare: Amount = Decimal("0")
-    distance_fare: Amount = Decimal("0")
-    time_fare: Amount = Decimal("0")
-    surge_multiplier: Annotated[Decimal, Field(ge=0, max_digits=5, decimal_places=2)] = Decimal("1.00")
-    surcharges: dict[str, SignedAmount] = Field(default_factory=dict)
-    other_fees: dict[str, SignedAmount] = Field(default_factory=dict)
-    discounts: dict[str, Amount] = Field(default_factory=dict)
-    rule_version: str
 
 
 class TrajectoryPointIn(BaseModel):

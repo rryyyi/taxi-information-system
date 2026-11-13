@@ -20,8 +20,14 @@
 </div>
 {% endif %}
 {% if attribution.status == 'NEEDS_REVIEW' %}
-<div class="banner warn">残差超过阈值，归因状态为 NEEDS_REVIEW，建议运营人工复核。</div>
+<div class="banner warn">残差超过 0.01 元，无法归因到堵车或绕路，已标记为待核查（NEEDS_REVIEW），请运营人工复核。</div>
 {% endif %}
+
+<section class="map-panel">
+  <h2>行程地图（Leaflet + OpenStreetMap）</h2>
+  <div id="map" class="map"></div>
+  <p class="hint">蓝线＝实际轨迹；灰色虚线＝参考路径；红色高亮＝绕路偏离段；橙色圆点＝低速等候路口（点击查看等候秒数与费用）。</p>
+</section>
 
 <div class="tabs">
   <button class="tab active" data-view="passenger">乘客视角</button>
@@ -95,6 +101,58 @@
 {% endblock %}
 
 {% block scripts %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var MAP_DATA = {{ views.passenger.map | tojson }};
+(function () {
+  var el = document.getElementById('map');
+  if (typeof L === 'undefined') {
+    el.innerHTML = '<div class="map-fallback">地图组件（Leaflet）脚本未加载成功：' +
+      '离线环境下 OSM 瓦片与 CDN 不可用，轨迹与事件坐标仍可通过账单 JSON 查看。</div>';
+    return;
+  }
+  var map = L.map('map', {scrollWheelZoom: true}).setView(MAP_DATA.center, MAP_DATA.zoom);
+  L.tileLayer(MAP_DATA.tile_url, {maxZoom: 19, attribution: MAP_DATA.attribution}).addTo(map);
+
+  if (MAP_DATA.reference_path && MAP_DATA.reference_path.length > 1) {
+    L.polyline(MAP_DATA.reference_path, {color: '#8a8f98', weight: 4, dashArray: '8 8',
+      opacity: 0.9}).addTo(map).bindPopup('参考路径（下单时规划）');
+  }
+  if (MAP_DATA.actual_path && MAP_DATA.actual_path.length > 1) {
+    L.polyline(MAP_DATA.actual_path, {color: '#1a73e8', weight: 5,
+      opacity: 0.9}).addTo(map).bindPopup('实际行驶轨迹');
+  }
+  MAP_DATA.detour_segments.forEach(function (seg) {
+    if (seg.path && seg.path.length > 1) {
+      L.polyline(seg.path, {color: '#d93025', weight: 7, opacity: 0.95}).addTo(map)
+        .bindPopup('<b>绕路偏离段</b><br>' + seg.entry_name + ' → ' + seg.exit_name +
+          '<br>参考 ' + seg.ref_distance_m.toFixed(0) + ' 米 / 实际 ' + seg.actual_distance_m.toFixed(0) +
+          ' 米<br>多行驶 ' + seg.extra_distance_m.toFixed(0) + ' 米<br>绕路费 ' + seg.fee + ' 元');
+      L.circleMarker(seg.entry, {color: '#d93025', radius: 6, fillOpacity: 1}).addTo(map)
+        .bindPopup('偏离段入口：' + seg.entry_name);
+      L.circleMarker(seg.exit, {color: '#d93025', radius: 6, fillOpacity: 1}).addTo(map)
+        .bindPopup('偏离段出口：' + seg.exit_name);
+    }
+  });
+  MAP_DATA.wait_events.forEach(function (ev) {
+    L.circleMarker([ev.lat, ev.lng], {color: '#e8710a', fillColor: '#f8b26a', weight: 2,
+      radius: 9, fillOpacity: 0.9}).addTo(map)
+      .bindPopup('<b>低速等候：' + ev.location + '</b><br>' + ev.t_start + ' — ' + ev.t_end +
+        '<br>持续 ' + ev.duration_s.toFixed(0) + ' 秒 · 平均 ' + ev.avg_speed_kmh.toFixed(1) + ' km/h' +
+        '<br>' + ev.peak_label + ' · 等候费 ' + ev.fee + ' 元');
+  });
+
+  var group = L.featureGroup();
+  if (MAP_DATA.actual_path.length) MAP_DATA.actual_path.forEach(function (p) { group.addLayer(L.marker(p)); });
+  if (MAP_DATA.reference_path.length) {
+    map.fitBounds(L.polyline(MAP_DATA.reference_path).getBounds(), {padding: [20, 20]});
+  } else if (MAP_DATA.actual_path.length > 1) {
+    map.fitBounds(L.polyline(MAP_DATA.actual_path).getBounds(), {padding: [20, 20]});
+  }
+})();
+</script>
+
 <script>
 document.querySelectorAll('.tab').forEach(function (btn) {
   btn.addEventListener('click', function () {
@@ -103,6 +161,7 @@ document.querySelectorAll('.tab').forEach(function (btn) {
     btn.classList.add('active');
     var target = document.getElementById('view-' + btn.dataset.view);
     if (target) { target.classList.add('active'); }
+    if (typeof map !== 'undefined' && map) { setTimeout(function () { map.invalidateSize(); }, 50); }
   });
 });
 </script>

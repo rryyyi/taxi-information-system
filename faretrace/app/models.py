@@ -121,13 +121,14 @@ class Bill(Base):
 
 
 class ReferenceRoute(Base):
-    """参考路径（折算到米制折线，判定"是否偏离"的基准）。"""
+    """参考路径（下单时规划路径）：折线 + 沈阳道路节点名表（供地图与事件定位）。"""
 
     __tablename__ = "reference_routes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), unique=True)
     polyline_json: Mapped[list] = mapped_column(JSON, nullable=False)
+    nodes_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     length_m: Mapped[int] = mapped_column(Integer, nullable=False)
     est_duration_s: Mapped[int] = mapped_column(Integer, nullable=False)
     free_flow_speed_kmh: Mapped[int] = mapped_column(Integer, nullable=False, default=40)
@@ -177,6 +178,12 @@ class Attribution(Base):
         cascade="all, delete-orphan",
         order_by="AttributionItem.sort_order",
     )
+    wait_events: Mapped[list["WaitEvent"]] = relationship(
+        back_populates="attribution", cascade="all, delete-orphan", order_by="WaitEvent.t_start"
+    )
+    detour_events: Mapped[list["DetourEvent"]] = relationship(
+        back_populates="attribution", cascade="all, delete-orphan", order_by="DetourEvent.id"
+    )
     transparent_bill: Mapped["TransparentBill | None"] = relationship(
         back_populates="attribution", uselist=False, cascade="all, delete-orphan"
     )
@@ -204,7 +211,7 @@ class AttributionItem(Base):
 
 
 class TransparentBill(Base):
-    """面向乘客/司机的成品账单视图（同一归因，两种叙述）。"""
+    """面向乘客/司机的成品账单视图（同一归因，两种叙述，含地图数据）。"""
 
     __tablename__ = "transparent_bills"
 
@@ -217,6 +224,60 @@ class TransparentBill(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     attribution: Mapped["Attribution"] = relationship(back_populates="transparent_bill")
+
+
+class WaitEvent(Base):
+    """等候事件表：一条连续低速段 = 一次路口/路段低速等候（时距并计计费，地图可定位）。"""
+
+    __tablename__ = "wait_events"
+    __table_args__ = (Index("ix_wait_attr", "attribution_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    attribution_id: Mapped[int] = mapped_column(
+        ForeignKey("attributions.id", ondelete="CASCADE"), nullable=False
+    )
+    location: Mapped[str] = mapped_column(String(64), nullable=False)   # 路口/路段名
+    t_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    t_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    duration_s: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    avg_speed_kmh: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    peak_seconds: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    offpeak_seconds: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    peak_label: Mapped[str] = mapped_column(String(16), nullable=False, default="平峰")
+    fee: Mapped[Decimal] = mapped_column(Money, nullable=False, default=0)
+    lat: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    lng: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    evidence_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    attribution: Mapped["Attribution"] = relationship(back_populates="wait_events")
+
+
+class DetourEvent(Base):
+    """绕路事件表：一段偏离参考路径的行驶（含地图坐标与多出里程）。"""
+
+    __tablename__ = "detour_events"
+    __table_args__ = (Index("ix_detour_attr", "attribution_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    attribution_id: Mapped[int] = mapped_column(
+        ForeignKey("attributions.id", ondelete="CASCADE"), nullable=False
+    )
+    entry_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    exit_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    entry_lat: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    entry_lng: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    exit_lat: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    exit_lng: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    ref_distance_m: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    actual_distance_m: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    extra_distance_m: Mapped[float] = mapped_column(nullable=False)  # type: ignore[arg-type]
+    fee: Mapped[Decimal] = mapped_column(Money, nullable=False, default=0)
+    path_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # 偏离段实际轨迹
+    evidence_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    attribution: Mapped["Attribution"] = relationship(back_populates="detour_events")
 
 
 class Dispute(Base):

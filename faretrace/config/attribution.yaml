@@ -1,50 +1,74 @@
-# FareTrace 归因规则与阈值配置
+# FareTrace 沈阳出租车透明账单归因系统 —— 归因阈值与沈阳固定计费基准
 #
 # 可追溯原则
-#   * 阈值/规则版本集中管理，业务代码中不得出现魔法数字
+#   * 阈值与沈阳计费基准集中管理，业务代码零魔法数字
 #   * config_version 变更 = 归因口径变更，落库到 attributions.config_version
-#   * algorithm_version 变更 = 算法实现变更，需同步更新 README 验收说明
+#   * 沈阳计费基准（shenyang_fare）为固定规则：日常归因中"计价规则变化"恒为 0 元
 #
-# 单位约定：金额=元（保留 2 位小数）、距离=米、时间=秒、速度字段标注单位
+# 单位约定：金额=元（2 位小数）、距离=米、时间=秒、时间均为沈阳本地时间（UTC+8）
 
-config_version: "cfg-1.0.0"
-algorithm_version: "faretrace-attr-1.0.0"
+config_version: "cfg-sy-1.0.0"
+algorithm_version: "faretrace-sy-attr-1.0.0"
 
 money:
   unit: "yuan"
   decimals: 2
-  # 归因项之和 + 残差 与 总差额 的最大允许偏差（元）
   epsilon: 0.01
 
+# ---- 沈阳出租车固定计费基准（依据公开的沈阳出租车运价规则，哈佛引用见 docs/references.md）----
+shenyang_fare:
+  # 白天档：起步价 9 元/3 公里；超 3 公里后每 500 米 1 元（即 2 元/公里）
+  DAY:
+    base_fare: 9.00
+    included_km_m: 3000
+    meter_step_m: 500
+    step_fare: 1.00
+  # 夜间/夏季冷气档：起步价 10 元/3 公里；每 455 米 1 元
+  NIGHT:
+    base_fare: 10.00
+    included_km_m: 3000
+    meter_step_m: 455
+    step_fare: 1.00
+  # 夜间窗口（本地时间）
+  night_window: "22:00-06:00"
+  # 低速等候费高峰窗口（早 7:00—9:00，晚 16:30—18:30）
+  peak_windows: ["07:00-09:00", "16:30-18:30"]
+  # 阶梯返空费：超 15 公里至 20 公里部分按里程运价加收 30%；20 公里以上部分加收 50%
+  return_fee:
+    tier1_from_m: 15000
+    tier1_to_m: 20000
+    tier1_rate: 0.30
+    tier2_from_m: 20000
+    tier2_rate: 0.50
+  # 时距并计：低速（<12km/h）时里程费照常，等候费另行叠加
+  # 高峰累计每 2 分钟 1 元（120 秒/元）；平峰累计每 3 分钟 1 元（180 秒/元）
+  wait_fee:
+    peak_seconds_per_yuan: 120
+    offpeak_seconds_per_yuan: 180
+
+# ---- 低速等候事件识别 ----
+low_speed:
+  speed_threshold_kmh: 12.0     # 时速低于 12 km/h 计为低速等候
+  min_wait_seconds: 20          # 连续低速段最短秒数（过滤采样噪声）
+  min_moving_speed_mps: 0.3     # 低于该速度（m/s）视为停驶/蠕行
+
+# ---- 轨迹预处理 ----
 trajectory:
-  # 少于该点数判定轨迹缺失（data_quality = INCOMPLETE，降级计算）
   MIN_POINTS: 3
-  # 相邻点时间间隔超过该值视为轨迹缺口（仍可使用，但标记 TRAJECTORY_GAP）
   MAX_GAP_SECONDS: 180
-  # 相邻点距离小于该值且时间戳相同视为重复点，去重
   DUPLICATE_DISTANCE_M: 1.0
-  # 相邻点隐含速度超过该值（m/s）视为明显异常点，剔除
   OUTLIER_SPEED_MPS: 55.6
-  # 拟合度缓冲：fit_score = max(0, 1 - 平均偏离距离 / FIT_BUFFER_M)
   FIT_BUFFER_M: 100
-  # 拟合度阈值：fit_score >= FIT_THRESHOLD 视为"基本走参考路径"
   FIT_THRESHOLD: 0.8
-  # 证据用：单点偏离超过该米数时，纳入"偏离片段"证据
   DEVIATION_SPAN_THRESHOLD_M: 50
 
-congestion:
-  # 连续低速判定阈值（km/h）
-  CONGESTION_SPEED_KMH: 15
-  # 低速连续时段需超过该秒数才计入拥堵
-  MIN_CONGESTION_SECONDS: 60
-  # 低于该速度视为"停驶/等待"
-  MIN_MOVING_SPEED_MPS: 0.5
-
 residual:
-  # 绝对值不超过 epsilon 的残差归零（四舍五入），并在说明中记录
   ZERO_TOLERANCE: 0.01
-  # 残差绝对值超过该值，归因状态置 NEEDS_REVIEW（提示人工复核）
   REVIEW_THRESHOLD: 1.0
 
-api:
-  default_page_size: 50
+# ---- 地图 ----
+map:
+  center: [41.80, 123.43]
+  zoom: 12
+  tile_url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  attribution: "© OpenStreetMap contributors"

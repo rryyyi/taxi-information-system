@@ -1,4 +1,4 @@
-"""系统元信息接口：健康检查、只读配置（阈值与规则版本，可追溯）。"""
+"""系统元信息接口：健康检查、只读配置（沈阳计费基准 + 算法阈值，可追溯）。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ def health() -> dict:
     cfg = get_config()
     return {
         "status": "ok",
-        "service": "fare-trace",
+        "service": "fare-trace-shenyang",
+        "city": "沈阳",
         "config_version": cfg.config_version,
         "algorithm_version": cfg.algorithm_version,
     }
@@ -24,21 +25,21 @@ def health() -> dict:
 
 @router.get("/config")
 def config() -> dict:
-    """只读：当前算法阈值、规则版本、归因项编码（供前端与审计核对）。"""
+    """只读：沈阳计费基准、算法阈值、归因项编码（供前端与审计核对）。"""
     cfg = get_config()
     traj = cfg.section("trajectory")
-    cong = cfg.section("congestion")
+    low = cfg.section("low_speed")
     resid = cfg.section("residual")
     return {
         "config_version": cfg.config_version,
         "algorithm_version": cfg.algorithm_version,
-        "money": cfg.section("money"),
+        "shenyang_fare": cfg.section("shenyang_fare"),
         "thresholds": {
             "FIT_BUFFER_M": traj["FIT_BUFFER_M"],
             "FIT_THRESHOLD": traj["FIT_THRESHOLD"],
             "DEVIATION_SPAN_THRESHOLD_M": traj["DEVIATION_SPAN_THRESHOLD_M"],
-            "CONGESTION_SPEED_KMH": cong["CONGESTION_SPEED_KMH"],
-            "MIN_CONGESTION_SECONDS": cong["MIN_CONGESTION_SECONDS"],
+            "SPEED_THRESHOLD_KMH": low["speed_threshold_kmh"],
+            "MIN_WAIT_SECONDS": low["min_wait_seconds"],
             "MIN_POINTS": traj["MIN_POINTS"],
             "MAX_GAP_SECONDS": traj["MAX_GAP_SECONDS"],
             "OUTLIER_SPEED_MPS": traj["OUTLIER_SPEED_MPS"],
