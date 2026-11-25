@@ -61,16 +61,16 @@
 | 6 | PRICING_RULE_CHANGE | 恒 0（沈阳基准固定） | 完整规则字段 |
 | 7 | UNEXPLAINED_RESIDUAL | 总差额 − 前六项；≤0.01 归零，>0.01 待核查 | 差额来源分解 |
 
-守恒由构造保证（残差兜底）；>1.00 元 → NEEDS_REVIEW；轨迹缺失 → DEGRADED（等候 0、绕路不予认定）。
+守恒由构造保证（残差兜底）；残差绝对值>0.01 元时解释中提示待核查，>1.00 元时整体状态为 NEEDS_REVIEW；轨迹不足时为 DEGRADED，若同时超出残差状态阈值则以 NEEDS_REVIEW 优先（等候 0、绕路不予认定）。
 
 ## 3. 数据库设计（SQLite，13 张表）
 
 ```
-pricing_rules 1─┬─* estimate_snapshots *─1┐
-                ├─* bills *───────────────1┤
+pricing_rules 1─┬─* fare_snapshots *─1┐
+                ├─* actual_bills *────────1┤
 orders 1────────┼─1 reference_routes(折线+道路节点名表) │
-                ├─* trajectory_points        │
-                └─1 attributions 1─┬─* attribution_items
+                ├─* track_points           │
+                └─1 attributions 1─┬─* attribution_records
                                    ├─* wait_events（等候事件表★）
                                    ├─* detour_events（绕路事件表★）
                                    ├─1 transparent_bills
@@ -81,12 +81,12 @@ orders 1────────┼─1 reference_routes(折线+道路节点名�
 |---|---|
 | `pricing_rules` | version(SY-DAY/SY-NIGHT)、base_fare、per_km（审计留痕） |
 | `orders` | order_no、city=沈阳、status、requested_at、completed_at、起终点标签 |
-| `estimate_snapshots` | quoted_price、est_distance_m、est_duration_s、rule_version（档位自动判定） |
-| `bills` | paid_amount、actual_distance_m、actual_duration_s、base_fare、distance_fare、rule_version |
+| `fare_snapshots` | quoted_price、est_distance_m、est_duration_s、rule_version（档位自动判定） |
+| `actual_bills` | paid_amount、actual_distance_m、actual_duration_s、base_fare、distance_fare、rule_version |
 | `reference_routes` | polyline_json、**nodes_json（沈阳道路节点名+坐标）**、length_m |
-| `trajectory_points` | seq、ts、lat、lng、speed_mps |
+| `track_points` | seq、ts、lat、lng、speed_mps |
 | `attributions` | total_delta、explained_amount、residual、fit_score、avg_deviation_m、data_quality、status、quality_flags_json、evidence_bundle_json、config_version、revision |
-| `attribution_items` | code、label、amount、description、evidence_json、impact_class |
+| `attribution_records` | code、label、amount、description、evidence_json、impact_class |
 | `wait_events` ★ | location(路口名)、t_start/t_end、duration_s、avg_speed_kmh、peak_seconds、offpeak_seconds、peak_label、fee、**lat/lng**、evidence_json |
 | `detour_events` ★ | entry/exit_name、entry/exit_lat/lng、ref/actual/extra_distance_m、fee、**path_json（偏离段轨迹）**、evidence_json |
 | `transparent_bills` | passenger_view_json、driver_view_json（含 map 数据） |
@@ -112,7 +112,7 @@ orders 1────────┼─1 reference_routes(折线+道路节点名�
 
 **页面 1 订单列表 `/orders`**：表格列含预估价、实付、差额、残差、拟合度、数据质量、等候/绕路事件数；演示操作面板指向验收样例 FT-SY-1800。
 
-**页面 2 透明账单 `/orders/FT-SY-1800/bill`**：
+**页面 2 透明账单 `/orders/FT-SY-1800/bill`**（下列为原版布局说明；当前中文界面与颜色以页面及截图为准）：
 - Leaflet + OSM 沈阳地图（中心 41.80,123.43，缩放 12）：蓝线=实际轨迹、灰虚线=参考路径、红色高亮=绕路偏离段（弹窗：参考/实际/多出米数与费用）、橙色圆点=等候路口（弹窗：路口名、时间、秒数、均速、高峰标签、费用）；离线时显示降级提示
 - 乘客/司机视角标签页：乘客=四卡片（预估/实付/总差额/残差）+叙述；司机=责任分组（驾驶行为/路况/沈阳固定规则/待核查）
 - 归因项明细表：每行可展开证据 JSON（含等候事件逐条坐标、绕路逐条米数）
@@ -121,7 +121,7 @@ orders 1────────┼─1 reference_routes(折线+道路节点名�
 
 **页面 3 争议提交 `/disputes/new`**：订单→归因项级联下拉（显示金额）、角色、原因；提交后回跳账单页显示"证据快照已冻结"；下方最近争议列表。
 
-截图待人工截取至 `docs/screenshots/`（自动化不引入，见 ASSUMPTIONS A5）。
+界面截图已保存在 `docs/screenshots/`，仓库首页引用订单与账单页面。截图不替代真实浏览器自动化测试。
 
 ## 6. 示例用例描述（摘要，完整见 docs/use-cases.md）
 
@@ -142,4 +142,4 @@ orders 1────────┼─1 reference_routes(折线+道路节点名�
 | 绕行费用连续费率（380m→0.76 元） | 与需求举证示例一致；500m 取整仅用于计费器口径 |
 | 残差兜底 + >0.01 待核查 | 严禁把取整/未知差额塞进堵车或绕路项 |
 | 争议快照 JSON 冻结 | 复核所见=发起所见，重算不影响 |
-| Leaflet + OSM 免费瓦片 | 无付费 API Key；离线时矢量图层仍可展示 |
+| 本地 Leaflet + OSM 瓦片 | Leaflet 静态资源随仓库提供；无付费 API Key，离线时矢量图层仍可展示 |

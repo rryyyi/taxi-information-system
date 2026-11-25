@@ -1,0 +1,30 @@
+name: Bug report / 缺陷反馈
+description: 提供可复现步骤、预期结果和实际结果。
+title: '[Bug] '
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题描述
+      description: 哪个页面、API 或业务结果出现问题？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 提供使用的合成订单、命令或最小请求；请勿上传真实轨迹或凭据。
+      placeholder: '例如：启动服务后打开 /orders/SY-1005/bill …'
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 操作系统、Python 版本、Git 提交、配置版本与脱敏日志。

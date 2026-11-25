@@ -1,0 +1,28 @@
+[Unit]
+Description=FareTrace 透明账单归因系统 (FastAPI/uvicorn)
+Documentation=https://github.com/rryyyi/taxi-information-system
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=faretrace
+Group=faretrace
+WorkingDirectory=/opt/faretrace
+Environment=PYTHONUNBUFFERED=1
+Environment=FARETRACE_CONFIG=/opt/faretrace/config/attribution.yaml
+Environment=FARETRACE_SEED_ON_START=1
+ExecStart=/opt/faretrace/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-server-header
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+# 加固：只允许写数据库与缓存目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/faretrace
+
+[Install]
+WantedBy=multi-user.target

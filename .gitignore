@@ -1,0 +1,46 @@
+# Python and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+test-results.xml
+.venv/
+venv/
+
+# Local databases and runtime output
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+*.err.log
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Agent state / local work notes
+.dream-rsi/
+.superpowers/
+faretrace/imp.txt
+faretrace/imp2.txt
+
+# Personal presentation artifacts (not application deliverables)
+/*.docx
+/build_script.py
+
+# Editors / generated packages
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+node_modules/
+dist/
+build/
+*.tar.gz

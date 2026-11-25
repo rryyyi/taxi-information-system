@@ -10,8 +10,8 @@
 > **fit_score 门控的路径偏离**（`FIT_BUFFER_M=100`、`FIT_THRESHOLD=0.8`）+ 连续低速拥堵（15 km/h / 60 s）。
 > 以代码与 `README.md`、`ASSUMPTIONS.md` 为准。
 >
-> 本文件是本项目的**唯一开发契约**。若需求不明确，按本计划与 `ASSUMPTIONS.md` 中的假设执行，不阻塞开发。
-> 开发按阶段推进，每阶段以「测试全绿」为进入下一阶段的唯一放行条件。
+> 本文件保留初版课程实施计划与历史决策，部分表数、算法和目录已被后续实现取代，不作为当前运行说明。
+> 当前功能以[仓库首页](../../README.md)、[系统设计](system-design.md)、`ASSUMPTIONS.md` 与代码为准。
 
 ---
 
@@ -134,12 +134,12 @@ faretrace/
 |---|---|---|
 | `pricing_rules` | `version`(PK str), `base_fare`, `per_km`, `per_min`, `min_fare`, `surcharges_json`, `effective_from` | 计价规则版本快照，用于「规则变化」归因与追溯 |
 | `orders` | `id`, `order_no`(uniq), `city`, `requested_at`, `completed_at`, `status` | 订单主表 |
-| `estimate_snapshots` | `order_id`, `quoted_price`, `est_distance_m`, `est_duration_s`, `rule_version`, `surge_multiplier`, `surge_json` | **下单时冻结的预估价快照**（不可变） |
-| `bills` | `order_id`, `paid_amount`, `actual_distance_m`, `actual_duration_s`, `base_fare`, `distance_fare`, `time_fare`, `surcharges_json`, `discounts_json`, `rule_version` | 实付账单（分项 + 汇总） |
+| `fare_snapshots` | `order_id`, `quoted_price`, `est_distance_m`, `est_duration_s`, `rule_version`, `surge_multiplier`, `surge_json` | **下单时冻结的预估价快照**（不可变） |
+| `actual_bills` | `order_id`, `paid_amount`, `actual_distance_m`, `actual_duration_s`, `base_fare`, `distance_fare`, `time_fare`, `surcharges_json`, `discounts_json`, `rule_version` | 实付账单（分项 + 汇总） |
 | `reference_routes` | `order_id`, `polyline_json`, `length_m`, `est_duration_s`, `free_flow_speed_mps` | 参考路径（折线点集） |
-| `trajectory_points` | `order_id`, `seq`, `ts`, `lat`, `lng`, `speed_mps` | 实际轨迹点（可为空 → 降级） |
+| `track_points` | `order_id`, `seq`, `ts`, `lat`, `lng`, `speed_mps` | 实际轨迹点（可为空 → 降级） |
 | `attributions` | `order_id`, `total_delta`, `residual`, `explained_sum`, `algorithm_version`, `config_version`, `quality_flags_json`, `status`, `created_at`, `evidence_bundle_json` | 一次归因运行（幂等：同订单重复触发则覆盖重算） |
-| `attribution_items` | `attribution_id`, `code`, `name`, `amount`, `amount_kind`(distance/time/rule/surcharge), `evidence_json`, `data_quality`, `sort_order` | 归因项（每项必有证据摘要） |
+| `attribution_records` | `attribution_id`, `code`, `name`, `amount`, `amount_kind`(distance/time/rule/surcharge), `evidence_json`, `data_quality`, `sort_order` | 归因项（每项必有证据摘要） |
 | `transparent_bills` | `attribution_id`, `passenger_view_json`, `driver_view_json` | 双视角成品账单 |
 | `dispute_evidence` | `dispute_id`, `attribution_item_id`, `evidence_json`, `bound_at` | 争议证据绑定 |
 | `disputes` | `id`, `order_no`, `attribution_id`, `attribution_item_id`, `initiator_role`, `reason`, `status`, `snapshot_json`, `created_at`, `reviewed_by`, `reviewed_at`, `resolution` | **争议发起瞬间冻结账单快照**（跨表冗余 JSON，保证可回溯） |
@@ -188,7 +188,7 @@ faretrace/
 
 ### 4.5 验证性质（写进测试）
 1. **守恒**：`|Σ items + residual - total_delta| <= 0.01`（每笔订单、含随机扰动订单 200 组）。
-2. **无隐藏**：`residual` 永远存在（可为 0.00），且必为 `attribution_items` 中的一行。
+2. **无隐藏**：`residual` 永远存在（可为 0.00），且必为 `attribution_records` 中的一行。
 3. **确定性**：同一输入 + 同一 `config_version` 两次归因结果完全一致。
 4. **幂等**：重复触发只产生一份最新归因，不重复记账。
 5. **降级不崩**：轨迹 `[]`、乱序、重复点、时间倒流、单点、无参考路径 6 种畸形输入全部返回可用账单。

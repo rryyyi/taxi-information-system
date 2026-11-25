@@ -1,0 +1,23 @@
+name: Feature request / 改进建议
+description: 从具体业务问题出发讨论改进。
+title: '[Feature] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 希望解决什么问题？
+      description: 描述用户、场景和当前阻碍。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案与取舍
+      description: 可选；说明对金额口径、证据、接口或部署的影响。
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 如何验证改进有效？
+      description: 提供样例、预期行为或可测量指标。
+    validations:
+      required: true
