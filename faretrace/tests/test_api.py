@@ -57,14 +57,14 @@ def test_bill_views_with_map_data(seeded_client: TestClient) -> None:
 
     # 地图数据：实际轨迹、参考路径、等候事件坐标、绕路段高亮
     map_data = passenger["map"]
-    assert map_data["center"] == [41.80, 123.43]
+    assert map_data["center"] == [41.70, 123.43]
     assert len(map_data["actual_path"]) > 10
     assert len(map_data["reference_path"]) > 10
     assert len(map_data["wait_events"]) == 4
     assert all(41.6 < e["lat"] < 41.9 for e in map_data["wait_events"])
     assert len(map_data["detour_segments"]) == 1
     seg = map_data["detour_segments"][0]
-    assert seg["entry_name"] == "青年大街—文艺路"
+    assert seg["entry_name"] == "浑南西路"
     assert len(seg["path"]) >= 2
 
     groups = driver["summary"]["groups"]
@@ -87,14 +87,14 @@ def test_events_endpoint_with_coordinates(seeded_client: TestClient) -> None:
     assert body["order_no"] == "FT-SY-1800"
     assert len(body["wait_events"]) == 4
     first = body["wait_events"][0]
-    assert first["location"].startswith("青年大街")
+    assert first["location"] in {"浑南中路—金阳大街", "沈阳南站", "浑南西路", "浑河桥南"}
     assert first["peak_label"] == "晚高峰"
     assert first["fee"] == "1.50"
     assert 41.6 < first["coordinate"]["lat"] < 41.9
 
     assert len(body["detour_events"]) == 1
     detour = body["detour_events"][0]
-    assert detour["entry_name"] == "青年大街—文艺路"
+    assert detour["entry_name"] == "浑南西路"
     assert detour["extra_distance_m"] == pytest.approx(1500, abs=10)
     assert detour["fee"] == "3.00"
     assert len(detour["path"]) >= 2

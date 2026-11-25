@@ -19,6 +19,9 @@
 
 from __future__ import annotations
 
+import json
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -40,6 +43,43 @@ class AttributionError(Exception):
     def __init__(self, message: str, code: str = "ATTRIBUTION_PRECONDITION_FAILED") -> None:
         super().__init__(message)
         self.code = code
+
+
+# ------------------------------------------------------------------
+# preprocess 结果缓存：preprocess(raw_points, cfg, polyline) 是纯函数，
+# 只读取（1）原始轨迹点、（2）参考折线、（3）cfg 的 trajectory / low_speed
+# 两个配置节（见 trajectory.py）。以这四项内容为键做 LRU 记忆化：
+# 相同输入直接复用已算好的 Trajectory，省去 O(点数×折线节点) 的几何重算。
+# attribute() 对返回的 Trajectory 只读不写（wait_spans/deviation_spans/path
+# 均只读取并复制），复用安全；条目命中后所有下游归因逻辑仍逐次执行。
+# ------------------------------------------------------------------
+_TRAJECTORY_CACHE_MAX = 128
+_trajectory_cache: OrderedDict[tuple, Trajectory] = OrderedDict()
+_trajectory_cache_lock = threading.Lock()
+
+
+def _cfg_json(value) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _preprocess_cached(raw_points, cfg, polyline) -> Trajectory:
+    key = (
+        None if polyline is None else _cfg_json(polyline),
+        _cfg_json(cfg.get_path("trajectory") or {}),
+        _cfg_json(cfg.get_path("low_speed") or {}),
+        tuple((p.ts.isoformat(), p.lat, p.lng, p.speed_mps) for p in raw_points),
+    )
+    with _trajectory_cache_lock:
+        cached = _trajectory_cache.get(key)
+        if cached is not None:
+            _trajectory_cache.move_to_end(key)
+            return cached
+    trajectory = preprocess(raw_points, cfg, polyline)
+    with _trajectory_cache_lock:
+        _trajectory_cache[key] = trajectory
+        while len(_trajectory_cache) > _TRAJECTORY_CACHE_MAX:
+            _trajectory_cache.popitem(last=False)
+    return trajectory
 
 
 @dataclass
@@ -157,7 +197,7 @@ def attribute(*, order, est_params, bill_params, cfg) -> AttributionDraft:
     ref = order.reference_route
     polyline = ref.polyline_json if ref is not None else None
     nodes = list(ref.nodes_json or []) if ref is not None else []
-    traj = preprocess(raw_points, cfg, polyline)
+    traj = _preprocess_cached(raw_points, cfg, polyline)
 
     flags: list[str] = list(traj.flags)
     items: list[ItemDraft] = []
@@ -360,8 +400,8 @@ def attribute(*, order, est_params, bill_params, cfg) -> AttributionDraft:
     )
 
     # ---------------- 4) 阶梯返空费 ----------------
-    est_return = shenyang.return_fee(est_params, est.est_distance_m)
-    bill_return = shenyang.return_fee(bill_params, bill.actual_distance_m)
+    est_return = shenyang.return_fee(cfg, est_params, est.est_distance_m)
+    bill_return = shenyang.return_fee(cfg, bill_params, bill.actual_distance_m)
     return_amount = money(bill_return - est_return)
     if return_amount == 0:
         return_desc = (
@@ -462,12 +502,12 @@ def attribute(*, order, est_params, bill_params, cfg) -> AttributionDraft:
     else:
         quote_recomputed = money(
             shenyang.core_fare(est_params, est.est_distance_m)
-            + shenyang.return_fee(est_params, est.est_distance_m)
+            + shenyang.return_fee(cfg, est_params, est.est_distance_m)
         )
         wait_from_events = wait_total
         bill_recomputed = money(
             shenyang.core_fare(bill_params, bill.actual_distance_m)
-            + shenyang.return_fee(bill_params, bill.actual_distance_m)
+            + shenyang.return_fee(cfg, bill_params, bill.actual_distance_m)
             + wait_from_events
         )
         quote_gap = money(quote_recomputed - quoted)

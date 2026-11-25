@@ -1,168 +1,163 @@
 {% extends "base.html" %}
-{% block title %}透明账单 {{ order.order_no }} · FareTrace{% endblock %}
+{% block title %}透明账单 · 明白出行{% endblock %}
 {% block content %}
-{% if dispute_created %}
-<div class="banner ok">已提交争议 #{{ dispute_created }}，证据快照已冻结，可在 <a href="/disputes/new">争议提交</a> 页面查看状态。</div>
-{% endif %}
-
-<h1>透明账单 · {{ order.order_no }}</h1>
-<p class="hint">{{ order.origin_label or '-' }} → {{ order.destination_label or '-' }} · {{ order.city }}</p>
-
+<a class="back-link" href="/orders">← 返回行程账本</a>
+{% if dispute_created %}<div class="banner ok" role="status">已提交争议，复核申请编号为 {{ dispute_created }}。本次账单和证据已保存，可到<a href="/disputes/new">费用复核</a>查看进度。</div>{% endif %}
+<header class="page-heading bill-page-heading"><div><span class="eyebrow">这一程 · 费用有据可循</span><h1>透明账单<span class="accent">。</span></h1><p>{{ order.origin_label or '起点待确认' }} <span class="route-arrow">→</span> {{ order.destination_label or '终点待确认' }}</p><small class="muted">{{ order.requested_at.strftime('%Y年%m月%d日 %H:%M') }} · {{ order.city }} · 订单 {{ order.order_no }}</small></div><span class="paper-stamp">一程<br>明白账</span></header>
 {% if not attribution or not views %}
-<div class="banner warn">该订单尚未完成归因，请先完成订单并生成账单。</div>
+<div class="panel empty-state"><h2>这份账单还在路上</h2><p>订单完成并生成费用说明后，即可查看本次行程的透明账单。</p><a class="button primary" href="/orders">返回订单列表</a></div>
 {% else %}
-
-{% if attribution.data_quality != 'COMPLETE' %}
-<div class="banner warn">
-  <strong>本次账单基于不完整轨迹生成。</strong>
-  轨迹缺失或有效点不足：拥堵延迟无法识别、路径偏离不予认定，部分归因项为降级计算结果。
-  数据质量：{{ attribution.data_quality }}；标记：{{ quality_flags | join('、') }}
-</div>
-{% endif %}
-{% if attribution.status == 'NEEDS_REVIEW' %}
-<div class="banner warn">残差超过 0.01 元，无法归因到堵车或绕路，已标记为待核查（NEEDS_REVIEW），请运营人工复核。</div>
-{% endif %}
-
-<section class="map-panel">
-  <h2>行程地图（Leaflet + OpenStreetMap）</h2>
-  <div id="map" class="map"></div>
-  <p class="hint">蓝线＝实际轨迹；灰色虚线＝参考路径；红色高亮＝绕路偏离段；橙色圆点＝低速等候路口（点击查看等候秒数与费用）。</p>
-</section>
-
-<div class="tabs">
-  <button class="tab active" data-view="passenger">乘客视角</button>
-  <button class="tab" data-view="driver">司机视角</button>
-</div>
-
-<section id="view-passenger" class="view active">
-  <h2>{{ views.passenger.title }}</h2>
-  <p class="headline">{{ views.passenger.headline }}</p>
-  <div class="cards">
-    <div class="card"><span>预估价</span><b>{{ views.passenger.summary.quoted_price }} 元</b></div>
-    <div class="card"><span>实付价</span><b>{{ views.passenger.summary.paid_amount }} 元</b></div>
-    <div class="card {{ 'pos' if views.passenger.total_delta > 0 else 'neg' }}"><span>总差额</span><b>{{ views.passenger.total_delta }} 元</b></div>
-    <div class="card {{ 'warn' if views.passenger.residual != 0 else '' }}"><span>残差</span><b>{{ views.passenger.residual }} 元</b></div>
+<section class="map-panel map-spotlight" aria-labelledby="journey-map-title">
+  <div class="section-heading">
+    <div><span class="eyebrow">行程全景 · 费用发生在哪里</span><h2 id="journey-map-title">沿着地图，看懂这一程</h2></div>
+    <div class="map-actions"><button type="button" class="button map-reset" id="map-reset" disabled>查看完整行程</button><a class="text-link" href="#fee-details">查看费用计算 ↓</a></div>
   </div>
-  <p class="narrative">{{ views.passenger.summary.narrative }}</p>
+  <div class="map-stage"><div id="map" class="map" aria-label="本次行程路线及费用事件地图"></div></div>
+  <p id="map-notice" class="map-notice" role="status" hidden></p>
+  <div class="map-legend"><span><i class="endpoint-legend start">起</i>行程起点</span><span><i class="endpoint-legend end">终</i>行程终点</span><span><i class="legend-line reference"></i>下单时参考路线</span><span><i class="legend-line actual"></i>实际行驶路线</span><span><i class="legend-line detour"></i>绕路偏离段</span><span><i class="legend-dot"></i>低速等候地点</span></div>
+  <div class="map-caption"><p>滚动鼠标滚轮放大、缩小，按住地图拖动；点击等候点或绕路段查看费用。</p><span>{{ attribution.wait_events|length }} 处等候 · {{ attribution.detour_events|length }} 段路线偏离</span></div>
+  <p class="hint">底图来自开放街道地图，加载需要联网；地点、时间、距离与计算过程可在下方费用明细中查看。</p>
 </section>
-
-<section id="view-driver" class="view">
-  <h2>{{ views.driver.title }}</h2>
-  <p class="headline">{{ views.driver.headline }}</p>
-  <div class="cards">
-    {% for key, group in views.driver.summary.groups.items() %}
-    <div class="card"><span>{{ group.label }}</span><b>{{ group.amount }} 元</b></div>
-    {% endfor %}
-  </div>
-  <p class="narrative">{{ views.driver.summary.narrative }}</p>
-  <p class="hint">{{ views.driver.summary.disclaimer }}</p>
-</section>
-
-<h2>归因项明细（每一项都可展开证据）</h2>
-<table class="items">
-  <thead>
-    <tr><th>归因项</th><th>金额</th><th>业务说明</th><th>责任归属</th><th>证据</th><th>操作</th></tr>
-  </thead>
-  <tbody>
-  {% for item in items %}
-    <tr class="{{ 'row-residual' if item.code == 'UNEXPLAINED_RESIDUAL' and item.amount != 0 else '' }}">
-      <td>{{ item.label }}<div class="code">{{ item.code }}</div></td>
-      <td class="{{ 'neg' if item.amount < 0 else ('pos' if item.amount > 0 else '') }}">{{ '%.2f'|format(item.amount) }}</td>
-      <td>{{ item.description }}</td>
-      <td>{{ item.impact_class }}</td>
-      <td>
-        <details>
-          <summary>展开 JSON</summary>
-          <pre>{{ evidence[item.code] }}</pre>
-        </details>
-      </td>
-      <td><a class="link" href="/disputes/new?order_no={{ order.order_no }}&item_code={{ item.code }}">发起争议</a></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-
-<div class="panel">
-  <h3>金额守恒校验</h3>
-  <p>归因项之和（含残差）：
-    <b>{{ views.passenger.conservation.sum_items_including_residual }} 元</b>
-    ｜ 总差额：<b>{{ views.passenger.conservation.total_delta }} 元</b>
-    ｜ 校验：<b class="{{ 'ok' if views.passenger.conservation.ok else 'neg' }}">{{ '通过（±0.01 元内）' if views.passenger.conservation.ok else '不通过' }}</b>
-  </p>
-  <p class="hint">口径：config_version {{ attribution.config_version }} · algorithm_version {{ attribution.algorithm_version }} · revision {{ attribution.revision }} · 拟合度 {{ '%.3f'|format(attribution.fit_score) if attribution.fit_score is not none else '—' }} · 平均偏离 {{ '%.1f'|format(attribution.avg_deviation_m) if attribution.avg_deviation_m is not none else '—' }} 米</p>
-</div>
-
-<div class="panel">
-  <h3>原始归因记录（可审计）</h3>
-  <details><summary>展开 evidence bundle</summary><pre>{{ evidence_bundle }}</pre></details>
-</div>
-
+{% if attribution.data_quality != 'COMPLETE' %}<div class="banner warn"><strong>本次账单基于不完整轨迹生成。</strong>等候费和绕路费用暂时无法举证，地图只展示已知起终点；其他费用按现有账单资料核对。</div>{% endif %}
+{% if attribution.residual|abs > 0.01 %}<div class="banner warn">本单仍有 {{ '%.2f'|format(attribution.residual) }} 元暂时无法解释，已单独列为待核实差额，请提交复核后由工作人员核实。</div>{% endif %}
+<div class="tabs" role="tablist" aria-label="账单视角"><button type="button" class="tab active" id="tab-passenger" data-view="passenger" role="tab" aria-selected="true" aria-controls="view-passenger">乘客视角</button><button type="button" class="tab" id="tab-driver" data-view="driver" role="tab" aria-selected="false" aria-controls="view-driver" tabindex="-1">司机视角</button></div>
+<section id="view-passenger" class="view active receipt" role="tabpanel" aria-labelledby="tab-passenger"><div class="receipt-heading"><span class="eyebrow">从预估到实付</span><span class="badge soft-green">同一份账单 · 逐项解释</span></div><div class="fare-flow"><div><span>下单时预估</span><b>{{ views.passenger.summary.quoted_price }}<small> 元</small></b></div><span class="flow-arrow" aria-hidden="true">→</span><div><span>行程结束实付</span><b>{{ views.passenger.summary.paid_amount }}<small> 元</small></b></div><div class="delta-card"><span>{{ '比预估多付' if views.passenger.total_delta > 0 else ('比预估少付' if views.passenger.total_delta < 0 else '与预估一致') }}</span><b>{{ '%.2f'|format(views.passenger.total_delta|abs) }}<small> 元</small></b></div></div><p class="receipt-note">{% for c in calculations if c.nonzero %}<span>{{ c.label }} <strong>{{ c.amount }} 元</strong></span>{{ ' · ' if not loop.last else '' }}{% else %}本次行程实付与预估一致，费用没有变化。{% endfor %}</p></section>
+<section id="view-driver" class="view receipt" role="tabpanel" aria-labelledby="tab-driver" hidden><span class="eyebrow">同一份费用，换个角度看</span><h2>把路线、路况与计价规则分开说明</h2><div class="cards">{% for key, group in views.driver.summary.groups.items() %}<div class="card"><span>{{ key|chinese }}</span><b>{{ group.amount }}<small> 元</small></b></div>{% endfor %}</div><p class="hint">路线变化仅是费用依据，不直接认定司机责任。乘客与司机看到的金额一致，均可提交复核。</p></section>
+<section class="section-space" id="fee-details"><div class="section-heading"><div><span class="eyebrow">钱是怎么算的</span><h2>逐项费用说明</h2></div><span class="hint">先看发生变化的费用，再核对其余项目</span></div><div class="fee-list">
+{% for c in calculations %}<article class="fee-item {{ 'fee-changed' if c.nonzero else '' }}"><details {% if c.nonzero %}open{% endif %}><summary><span class="fee-icon" aria-hidden="true">{{ '%02d'|format(loop.index) }}</span><span class="fee-title">{{ c.label }}<small>{{ c.impact }}</small></span><span class="fee-amount">{{ c.amount }} <small>元</small></span><span class="expand-label">计算过程 <span class="chevron">⌄</span></span></summary><div class="fee-body"><div class="rule-box"><span class="rule-label">适用规则</span><p>{{ c.rule }}</p></div>{% for ev in c.events %}<div class="event-card"><div class="event-top"><span class="event-number">{{ '%02d'|format(loop.index) }}</span><h3>{{ ev.title }}</h3></div><p class="hint">{{ ev.detail }}</p><p class="calculation">{{ ev.formula }}</p><p class="hint">{{ ev.note }}</p></div>{% endfor %}<div class="calculation-steps"><h3>本单怎么算</h3><ol>{% for step in c.steps %}<li>{{ step }}</li>{% endfor %}</ol></div><a class="text-link" href="/disputes/new?order_no={{ order.order_no }}&item_code={{ c.code }}">对这项费用有疑问？申请复核 ↗</a></div></details></article>{% endfor %}
+</div></section>
+<section class="audit-panel section-space"><span class="check-seal" aria-hidden="true">✓</span><div><h2>金额守恒校验</h2><p>已解释费用 {{ '%.2f'|format(attribution.explained_amount) }} 元 ＋ 待核实差额 {{ '%.2f'|format(attribution.residual) }} 元 ＝ 总差额 {{ '%.2f'|format(attribution.total_delta) }} 元</p><p class="hint">{{ '通过（±0.01 元内）' if views.passenger.conservation.ok else '金额暂未核对通过，请联系工作人员' }} · 待核实差额也称“残差”，始终单独保留。</p></div></section>
+<details class="audit-details"><summary>查看本次核对依据与记录</summary><dl class="facts"><div><dt>资料完整程度</dt><dd>{{ attribution.data_quality|chinese }}</dd></div><div><dt>路线贴合度</dt><dd>{{ '%.1f'|format(attribution.fit_score * 100) ~ '%' if attribution.fit_score is not none else '缺少轨迹，暂无法判断' }}</dd></div><div><dt>平均路线偏离</dt><dd>{{ '%.1f'|format(attribution.avg_deviation_m) ~ ' 米' if attribution.avg_deviation_m is not none else '暂无法判断' }}</dd></div><div><dt>费用核对次数</dt><dd>第 {{ attribution.revision }} 次</dd></div><div><dt>本次核对时间</dt><dd>{{ attribution.computed_at.strftime('%Y年%m月%d日 %H:%M') if attribution.computed_at else '暂未生成' }}</dd></div></dl><p class="hint">费用依据来自本单已保存的预估价、实付账单、参考路线和行驶轨迹。提交复核时将保存这些依据，之后重新核对也不会覆盖已提交的材料。</p></details>
+<aside class="demo-note"><div><h3>有疑问，可以再核实。</h3><p class="hint">选择具体费用并说明情况，我们会把账单与行程依据一起交给工作人员。</p></div><a class="button primary" href="/disputes/new?order_no={{ order.order_no }}">申请费用复核 ↗</a></aside>
 {% endif %}
 {% endblock %}
-
 {% block scripts %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% if views %}
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css?v=1.9.4">
+<script src="/static/vendor/leaflet/leaflet.js?v=1.9.4"></script>
 <script>
-var MAP_DATA = {{ views.passenger.map | tojson }};
+const MAP_DATA = {{ views.passenger.map | tojson }};
+const ENDPOINTS = {{ [start_point, end_point] | tojson }};
+const ENDPOINT_NAMES = {{ [order.origin_label or '起点待确认', order.destination_label or '终点待确认'] | tojson }};
 (function () {
-  var el = document.getElementById('map');
+  const el = document.getElementById('map');
+  const notice = document.getElementById('map-notice');
+  function message(text) { notice.textContent = text; notice.hidden = false; }
   if (typeof L === 'undefined') {
-    el.innerHTML = '<div class="map-fallback">地图组件（Leaflet）脚本未加载成功：' +
-      '离线环境下 OSM 瓦片与 CDN 不可用，轨迹与事件坐标仍可通过账单 JSON 查看。</div>';
+    el.innerHTML = '<div class="map-fallback"><span class="map-fallback-icon">⌁</span><h3>地图暂时没有加载出来</h3><p>联网后刷新即可重试。您仍可在下方明细中查看地点、时间、距离与费用。</p></div>';
     return;
   }
-  var map = L.map('map', {scrollWheelZoom: true}).setView(MAP_DATA.center, MAP_DATA.zoom);
-  L.tileLayer(MAP_DATA.tile_url, {maxZoom: 19, attribution: MAP_DATA.attribution}).addTo(map);
-
-  if (MAP_DATA.reference_path && MAP_DATA.reference_path.length > 1) {
-    L.polyline(MAP_DATA.reference_path, {color: '#8a8f98', weight: 4, dashArray: '8 8',
-      opacity: 0.9}).addTo(map).bindPopup('参考路径（下单时规划）');
+  function safe(value) { const node = document.createElement('span'); node.textContent = value == null ? '' : value; return node.innerHTML; }
+  function time(value) { return safe((value || '').replace('T', ' ')); }
+  const map = L.map('map', {scrollWheelZoom: true}).setView(MAP_DATA.center, MAP_DATA.zoom);
+  map.attributionControl.setPrefix(false);
+  // 底图源自动降级链：首选国内可达的 Esri 街道图，失败后依次切换 OSM 官方 / OSM.de 镜像 / CARTO。
+  const TILE_PROVIDERS = [
+    {url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', attribution: 'Esri, Maxar, Earthstar Geographics', label: 'Esri 街道图'},
+    {url: MAP_DATA.tile_url, attribution: '© <a href="https://www.openstreetmap.org/copyright">开放街道地图贡献者</a>', label: 'OpenStreetMap'},
+    {url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png', attribution: '© <a href="https://www.openstreetmap.org/copyright">开放街道地图贡献者</a>', label: 'OpenStreetMap（欧洲镜像）'},
+    {url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', subdomains: 'abcd', attribution: '© <a href="https://www.openstreetmap.org/copyright">开放街道地图贡献者</a> © CARTO', label: 'CARTO'}
+  ];
+  let tiles = null, tileLoaded = false, providerIdx = 0, switchTimer = null, tileNoticeShown = false;
+  function addTiles(idx) {
+    if (tiles) map.removeLayer(tiles);
+    const p = TILE_PROVIDERS[idx];
+    tiles = L.tileLayer(p.url, {maxZoom: 18, attribution: p.attribution, subdomains: p.subdomains || 'abc'}).addTo(map);
+    tiles.on('tileload', function () {
+      tileLoaded = true;
+      if (tileNoticeShown) { notice.hidden = true; tileNoticeShown = false; }
+    });
+    tiles.on('tileerror', onTileError);
   }
-  if (MAP_DATA.actual_path && MAP_DATA.actual_path.length > 1) {
-    L.polyline(MAP_DATA.actual_path, {color: '#1a73e8', weight: 5,
-      opacity: 0.9}).addTo(map).bindPopup('实际行驶轨迹');
+  function onTileError() {
+    if (tileLoaded || MAP_DATA.data_quality === 'INCOMPLETE') return;
+    if (switchTimer) return;
+    switchTimer = setTimeout(function () {
+      switchTimer = null;
+      if (tileLoaded) return;
+      providerIdx += 1;
+      if (providerIdx < TILE_PROVIDERS.length) {
+        addTiles(providerIdx);
+        message('正在切换备用底图源（' + TILE_PROVIDERS[providerIdx].label + '）……');
+        tileNoticeShown = true;
+      } else {
+        message('街道底图暂时无法连接，行程线与费用标记仍可查看。联网后刷新即可重试。');
+        tileNoticeShown = true;
+      }
+    }, 1500);
   }
-  MAP_DATA.detour_segments.forEach(function (seg) {
-    if (seg.path && seg.path.length > 1) {
-      L.polyline(seg.path, {color: '#d93025', weight: 7, opacity: 0.95}).addTo(map)
-        .bindPopup('<b>绕路偏离段</b><br>' + seg.entry_name + ' → ' + seg.exit_name +
-          '<br>参考 ' + seg.ref_distance_m.toFixed(0) + ' 米 / 实际 ' + seg.actual_distance_m.toFixed(0) +
-          ' 米<br>多行驶 ' + seg.extra_distance_m.toFixed(0) + ' 米<br>绕路费 ' + seg.fee + ' 元');
-      L.circleMarker(seg.entry, {color: '#d93025', radius: 6, fillOpacity: 1}).addTo(map)
-        .bindPopup('偏离段入口：' + seg.entry_name);
-      L.circleMarker(seg.exit, {color: '#d93025', radius: 6, fillOpacity: 1}).addTo(map)
-        .bindPopup('偏离段出口：' + seg.exit_name);
-    }
+  addTiles(0);
+  setTimeout(function () { if (!tileLoaded && providerIdx < TILE_PROVIDERS.length - 1 && MAP_DATA.data_quality !== 'INCOMPLETE') { message('街道底图加载较慢，您可先查看行程线和下方费用明细。'); tileNoticeShown = true; } }, 8000);
+  const bounds = [];
+  if (MAP_DATA.data_quality === 'INCOMPLETE') {
+    message('轨迹资料不完整，目前仅展示已知起终点，暂不绘制推测路线。');
+  } else {
+    if (MAP_DATA.reference_path.length > 1) { L.polyline(MAP_DATA.reference_path, {color: '#3f7eae', weight: 4, dashArray: '7 7', opacity: .85}).addTo(map).bindPopup('下单时规划的参考路线'); bounds.push(...MAP_DATA.reference_path); }
+    if (MAP_DATA.actual_path.length > 1) { L.polyline(MAP_DATA.actual_path, {color: '#cd8249', weight: 5, opacity: .95}).addTo(map).bindPopup('本次实际行驶路线'); bounds.push(...MAP_DATA.actual_path); }
+    MAP_DATA.detour_segments.forEach(function (seg) {
+      if (seg.path && seg.path.length > 1) { bounds.push(...seg.path); L.polyline(seg.path, {color: '#8565a7', weight: 7}).addTo(map).bindPopup('<b>绕路偏离段</b><br>' + safe(seg.entry_name) + ' → ' + safe(seg.exit_name) + '<br>参考 ' + seg.ref_distance_m.toFixed(1) + ' 米；实际 ' + seg.actual_distance_m.toFixed(1) + ' 米<br>多行驶 ' + seg.extra_distance_m.toFixed(1) + ' 米<br>增加费用 ' + safe(seg.fee) + ' 元'); }
+    });
+    MAP_DATA.wait_events.forEach(function (ev) { bounds.push([ev.lat, ev.lng]); L.circleMarker([ev.lat, ev.lng], {color: '#fff', fillColor: '#ba5d51', weight: 2, radius: 8, fillOpacity: 1}).addTo(map).bindPopup('<b>低速等候 · ' + safe(ev.location) + '</b><br>' + time(ev.t_start) + ' 至 ' + time(ev.t_end) + '<br>持续 ' + ev.duration_s.toFixed(1) + ' 秒 · 平均每小时 ' + ev.avg_speed_kmh.toFixed(1) + ' 公里<br>' + safe(ev.peak_label) + ' · 等候费 ' + safe(ev.fee) + ' 元'); });
+  }
+  // 图钉尖端即坐标锚点；保持与实际绘制的轨迹首尾一致，不以等候事件代替终点。
+  const hasActual = MAP_DATA.data_quality !== 'INCOMPLETE' && MAP_DATA.actual_path.length > 1;
+  const endpoints = hasActual
+    ? [MAP_DATA.actual_path[0], MAP_DATA.actual_path[MAP_DATA.actual_path.length - 1]]
+    : ENDPOINTS;
+  map.createPane('journeyEndpoints');
+  map.getPane('journeyEndpoints').style.zIndex = 650;
+  endpoints.forEach(function (point, index) {
+    if (!point) return;
+    bounds.push(point);
+    const kind = index === 0 ? 'start' : 'end';
+    const word = index === 0 ? '起' : '终';
+    const title = (hasActual ? '' : '参考') + (index === 0 ? '起点' : '终点');
+    const color = index === 0 ? '#216457' : '#b85c3e';
+    const icon = L.divIcon({
+      className: 'journey-endpoint-icon endpoint-' + kind,
+      html: '<svg viewBox="0 0 40 54" width="40" height="54" aria-hidden="true"><path d="M20 52 C17 43 2 31 2 20 A18 18 0 1 1 38 20 C38 31 23 43 20 52Z" fill="' + color + '" stroke="white" stroke-width="2"/><text x="20" y="26" text-anchor="middle" fill="white" font-size="17" font-weight="700">' + word + '</text></svg>',
+      iconSize: [40, 54], iconAnchor: [20, 52], popupAnchor: [0, -48], tooltipAnchor: [0, 0]
+    });
+    const nearbyWaits = MAP_DATA.wait_events.filter(function (ev) { return map.distance(point, [ev.lat, ev.lng]) < 20; });
+    const waitText = nearbyWaits.length && hasActual
+      ? '<br><b>此处也有等候记录</b><br>' + nearbyWaits.map(function (ev) { return safe(ev.location) + '：' + ev.duration_s.toFixed(1) + ' 秒，' + safe(ev.fee) + ' 元'; }).join('<br>')
+      : '';
+    L.marker(point, {icon: icon, pane: 'journeyEndpoints', zIndexOffset: 1000,
+      title: title + '：' + ENDPOINT_NAMES[index], alt: title + '：' + ENDPOINT_NAMES[index], riseOnHover: true})
+      .addTo(map)
+      .bindTooltip('<strong>' + title + '</strong><span>' + safe(ENDPOINT_NAMES[index]) + '</span>', {
+        permanent: true, interactive: false, direction: index === 0 ? 'bottom' : 'top',
+        offset: index === 0 ? [0, 7] : [0, -57], className: 'endpoint-label endpoint-label-' + kind
+      })
+      .bindPopup('<b>' + title + ' · ' + safe(ENDPOINT_NAMES[index]) + '</b><br>' +
+        (hasActual ? '位置取自已保存轨迹的' + (index === 0 ? '首个' : '最后一个') + '点。' : '轨迹不足，使用下单时参考路线端点，不代表实际上下车位置。') +
+        '<br>北纬 ' + Number(point[0]).toFixed(6) + '°，东经 ' + Number(point[1]).toFixed(6) + '°' +
+        '<br>合成演示坐标为近似位置，不用于真实导航。' + waitText, {
+          maxWidth: Math.max(160, Math.min(300, map.getSize().x - 100)),
+          autoPanPaddingTopLeft: [24, 70], autoPanPaddingBottomRight: [65, 30]
+        });
   });
-  MAP_DATA.wait_events.forEach(function (ev) {
-    L.circleMarker([ev.lat, ev.lng], {color: '#e8710a', fillColor: '#f8b26a', weight: 2,
-      radius: 9, fillOpacity: 0.9}).addTo(map)
-      .bindPopup('<b>低速等候：' + ev.location + '</b><br>' + ev.t_start + ' — ' + ev.t_end +
-        '<br>持续 ' + ev.duration_s.toFixed(0) + ' 秒 · 平均 ' + ev.avg_speed_kmh.toFixed(1) + ' km/h' +
-        '<br>' + ev.peak_label + ' · 等候费 ' + ev.fee + ' 元');
-  });
-
-  var group = L.featureGroup();
-  if (MAP_DATA.actual_path.length) MAP_DATA.actual_path.forEach(function (p) { group.addLayer(L.marker(p)); });
-  if (MAP_DATA.reference_path.length) {
-    map.fitBounds(L.polyline(MAP_DATA.reference_path).getBounds(), {padding: [20, 20]});
-  } else if (MAP_DATA.actual_path.length > 1) {
-    map.fitBounds(L.polyline(MAP_DATA.actual_path).getBounds(), {padding: [20, 20]});
+  function showWholeJourney() {
+    if (bounds.length > 1) map.fitBounds(bounds, {paddingTopLeft: [85, 155], paddingBottomRight: [85, 105], maxZoom: 15});
+    else if (bounds.length === 1) map.setView(bounds[0], 14);
   }
+  showWholeJourney();
+  const reset = document.getElementById('map-reset');
+  reset.disabled = bounds.length === 0;
+  reset.addEventListener('click', showWholeJourney);
+  map.zoomControl.setPosition('topright');
+  map.zoomControl._zoomInButton.title = '放大地图';
+  map.zoomControl._zoomInButton.setAttribute('aria-label', '放大地图');
+  map.zoomControl._zoomOutButton.title = '缩小地图';
+  map.zoomControl._zoomOutButton.setAttribute('aria-label', '缩小地图');
 })();
 </script>
-
 <script>
-document.querySelectorAll('.tab').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    document.querySelectorAll('.tab').forEach(function (b) { b.classList.remove('active'); });
-    document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
-    btn.classList.add('active');
-    var target = document.getElementById('view-' + btn.dataset.view);
-    if (target) { target.classList.add('active'); }
-    if (typeof map !== 'undefined' && map) { setTimeout(function () { map.invalidateSize(); }, 50); }
-  });
-});
+const tabs = Array.from(document.querySelectorAll('.tab'));
+function selectTab(btn) {
+  tabs.forEach(function (tab) { const selected = tab === btn; tab.classList.toggle('active', selected); tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1; const panel = document.getElementById('view-' + tab.dataset.view); panel.classList.toggle('active', selected); panel.hidden = !selected; });
+}
+tabs.forEach(function (btn, index) { btn.addEventListener('click', function () { selectTab(btn); }); btn.addEventListener('keydown', function (ev) { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) { ev.preventDefault(); const next = ev.key === 'Home' ? 0 : ev.key === 'End' ? tabs.length - 1 : (index + (ev.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length; selectTab(tabs[next]); tabs[next].focus(); } }); });
 </script>
+{% endif %}
 {% endblock %}

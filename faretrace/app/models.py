@@ -82,7 +82,7 @@ class Order(Base):
 class EstimateSnapshot(Base):
     """下单时的预估价快照（乘客看到的"预估价 18 元"）。"""
 
-    __tablename__ = "estimate_snapshots"
+    __tablename__ = "fare_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), unique=True)
@@ -101,7 +101,7 @@ class EstimateSnapshot(Base):
 class Bill(Base):
     """实付账单（分项 + 汇总）。"""
 
-    __tablename__ = "bills"
+    __tablename__ = "actual_bills"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), unique=True)
@@ -137,7 +137,7 @@ class ReferenceRoute(Base):
 
 
 class TrajectoryPoint(Base):
-    __tablename__ = "trajectory_points"
+    __tablename__ = "track_points"
     __table_args__ = (Index("ix_traj_order_seq", "order_id", "seq"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -192,7 +192,7 @@ class Attribution(Base):
 class AttributionItem(Base):
     """透明账单结果表：单条归因项（金额 + 说明 + 证据 JSON）。"""
 
-    __tablename__ = "attribution_items"
+    __tablename__ = "attribution_records"
     __table_args__ = (UniqueConstraint("attribution_id", "code", name="uq_item_code"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -317,7 +317,7 @@ class DisputeEvidence(Base):
         ForeignKey("disputes.id", ondelete="CASCADE"), nullable=False
     )
     attribution_item_id: Mapped[int] = mapped_column(
-        ForeignKey("attribution_items.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("attribution_records.id", ondelete="CASCADE"), nullable=False
     )
     evidence_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     bound_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

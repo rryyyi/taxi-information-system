@@ -26,7 +26,7 @@ def test_versions_present(cfg: Config) -> None:
         ("low_speed.speed_threshold_kmh", 12.0),
         ("trajectory.FIT_BUFFER_M", 100),
         ("trajectory.FIT_THRESHOLD", 0.8),
-        ("map.center", [41.80, 123.43]),
+        ("map.center", [41.70, 123.43]),
     ],
 )
 def test_thresholds_come_from_config(cfg: Config, path: str, expected: object) -> None:

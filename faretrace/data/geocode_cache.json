@@ -1,0 +1,27 @@
+{
+  "东北大学浑南校区": {
+    "lat": 41.66,
+    "lng": 123.42,
+    "source": "local-anchor"
+  },
+  "沈阳南站": {
+    "lat": 41.688,
+    "lng": 123.414,
+    "source": "local-anchor"
+  },
+  "浑河桥南": {
+    "lat": 41.742,
+    "lng": 123.4362,
+    "source": "local-anchor"
+  },
+  "浑南西路": {
+    "lat": 41.72,
+    "lng": 123.428,
+    "source": "local-anchor"
+  },
+  "北陵公园": {
+    "lat": 41.828,
+    "lng": 123.429,
+    "source": "local-anchor"
+  }
+}

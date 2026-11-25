@@ -7,5 +7,6 @@ pydantic-settings==2.14.2
 Jinja2==3.1.6
 PyYAML==6.0.3
 python-multipart==0.0.20
+Shapely==2.1.2
 pytest==9.0.2
 httpx==0.28.1

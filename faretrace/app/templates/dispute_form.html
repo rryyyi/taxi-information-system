@@ -1,83 +1,31 @@
 {% extends "base.html" %}
-{% block title %}争议提交 · FareTrace{% endblock %}
+{% block title %}费用复核 · 明白出行{% endblock %}
 {% block content %}
-<h1>争议提交</h1>
-<p class="hint">对某个归因项有异议时提交。系统会冻结提交瞬间的账单与证据快照，供运营复核；系统不直接裁决对错。</p>
-
-{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
-
+<header class="page-heading"><div><span class="eyebrow">听见疑问 · 留下依据</span><h1>有疑问，就再核实一次<span class="accent">。</span></h1><p>选择一笔费用，说说您的疑问。账单与行程依据会随申请一起保存。</p></div><span class="paper-stamp">有据<br>可查</span></header>
+{% if error %}<div class="banner warn" role="alert">{{ error }}</div>{% endif %}
+<div class="dispute-layout"><section class="panel form-panel"><div class="section-heading"><div><span class="eyebrow">填写申请</span><h2>争议提交</h2></div><span class="badge soft-green">账单依据自动保存</span></div>
 <form method="post" action="/disputes" class="form">
-  <label>订单号
-    <select name="order_no" id="order_no" required>
-      <option value="">请选择订单</option>
-      {% for o in orders %}
-      <option value="{{ o.order_no }}" {{ 'selected' if o.order_no == preselected_order else '' }}>{{ o.order_no }}</option>
-      {% endfor %}
-    </select>
-  </label>
-
-  <label>归因项
-    <select name="item_code" id="item_code" required>
-      <option value="">请选择归因项</option>
-      {% for o in orders %}
-        {% for item in o.item_list %}
-        <option value="{{ item.code }}" data-order="{{ o.order_no }}"
-          {{ 'selected' if item.code == preselected_item and o.order_no == preselected_order else '' }}>
-          {{ o.order_no }} · {{ item.label }}（{{ item.amount }} 元）
-        </option>
-        {% endfor %}
-      {% endfor %}
-    </select>
-  </label>
-
-  <label>发起角色
-    <select name="initiator_role" required>
-      <option value="passenger">乘客</option>
-      <option value="driver">司机</option>
-    </select>
-  </label>
-
-  <label>争议原因
-    <textarea name="reason" rows="4" placeholder="例如：这段路我经常走，实际只绕了 0.5 公里"></textarea>
-  </label>
-
-  <button type="submit" class="primary">提交争议（冻结证据快照）</button>
-</form>
-
-<h2>最近争议</h2>
-<table class="list">
-  <thead><tr><th>#</th><th>订单</th><th>归因项</th><th>角色</th><th>状态</th><th>原因</th><th>提交时间</th></tr></thead>
-  <tbody>
-  {% for d in disputes %}
-    <tr>
-      <td>{{ d.id }}</td>
-      <td><a href="/orders/{{ d.order_no }}/bill">{{ d.order_no }}</a></td>
-      <td>{{ d.item_code }}</td>
-      <td>{{ d.role }}</td>
-      <td>{{ d.status }}</td>
-      <td>{{ d.reason }}</td>
-      <td>{{ d.created_at }}</td>
-    </tr>
-  {% else %}
-    <tr><td colspan="7">暂无争议记录</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<label>需要复核的订单<select name="order_no" id="order_no" required><option value="">请选择一笔行程</option>{% for o in orders %}<option value="{{ o.order_no }}" {{ 'selected' if o.order_no == preselected_order else '' }}>{{ o.order_no }}</option>{% endfor %}</select></label>
+<label>具体是哪一项费用<select name="item_code" id="item_code" required><option value="">请先选择订单，再选择费用</option>{% for o in orders %}{% for item in o.item_list %}<option value="{{ item.code }}" data-order="{{ o.order_no }}" {{ 'selected' if item.code == preselected_item and o.order_no == preselected_order else '' }}>{{ item.code|chinese }}（{{ item.amount }} 元）</option>{% endfor %}{% endfor %}</select></label>
+<label>您的身份<select name="initiator_role" required><option value="passenger" {{ 'selected' if selected_role|default('passenger') == 'passenger' else '' }}>乘客</option><option value="driver" {{ 'selected' if selected_role|default('passenger') == 'driver' else '' }}>司机</option></select></label>
+<label>您希望核实什么<textarea name="reason" rows="5" maxlength="4000" placeholder="例如：我想核实浑南西路这段绕路费用。当时是否因为道路施工需要绕行？">{{ reason|default('') }}</textarea><small class="hint">可补充路段、时间或实际遇到的情况，帮助工作人员了解问题。</small></label>
+<button type="submit" class="button primary">提交复核申请 <span aria-hidden="true">↗</span></button><p class="hint">提交后会保存当前账单和相关依据，后续更新不会覆盖这些材料。</p>
+</form></section>
+<aside class="review-guide"><span class="eyebrow">接下来会发生什么</span><h2>每个疑问，都有迹可循。</h2><ol class="process-list"><li><b>留下您的疑问</b><p>明确到一笔费用，便于核对。</p></li><li><b>一并保存账单依据</b><p>包括当时的费用说明、路线和事件记录。</p></li><li><b>由工作人员复核</b><p>结合实际情况核实，您可在下方查看进度。</p></li></ol><div class="guide-note">费用归因只提供核对依据，不直接判定乘客或司机责任。</div></aside></div>
+<section class="section-space"><div class="section-heading"><div><span class="eyebrow">申请进度</span><h2>最近复核记录</h2></div><span class="hint">显示最近 20 条记录</span></div><div class="table-wrap"><table class="list"><thead><tr><th>申请编号 / 订单</th><th>复核费用</th><th>申请人</th><th>进度</th><th>问题说明</th><th>提交时间</th></tr></thead><tbody>{% for d in disputes %}<tr><td>第 {{ d.id }} 号申请<a class="cell-note" href="/orders/{{ d.order_no }}/bill">{{ d.order_no }} ↗</a></td><td>{{ d.item_code|chinese }}</td><td>{{ d.role|chinese }}</td><td><span class="badge soft-amber">{{ d.status|chinese }}</span></td><td class="reason-cell">{{ d.reason or '未补充说明' }}</td><td>{{ d.created_at }}</td></tr>{% else %}<tr><td colspan="6" class="empty-state"><span class="empty-icon" aria-hidden="true">◎</span><strong>暂时没有复核申请</strong><p>每笔费用都可以核对。有疑问时，填写上方表单即可。</p></td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}
-
 {% block scripts %}
 <script>
-var orderSelect = document.getElementById('order_no');
-var itemSelect = document.getElementById('item_code');
+const orderSelect = document.getElementById('order_no');
+const itemSelect = document.getElementById('item_code');
+const itemOptions = Array.from(itemSelect.options).slice(1);
 function filterItems() {
-  var order = orderSelect.value;
-  Array.from(itemSelect.options).forEach(function (opt) {
-    if (!opt.value) { return; }
-    var match = !order || opt.dataset.order === order;
-    opt.hidden = !match;
-    opt.disabled = !match;
-    if (!match && opt.selected) { itemSelect.value = ''; }
-  });
+  const previous = itemSelect.value;
+  const selectedOrder = itemSelect.selectedOptions[0] && itemSelect.selectedOptions[0].dataset.order;
+  itemSelect.replaceChildren(new Option(orderSelect.value ? '请选择需要复核的费用' : '请先选择订单，再选择费用', ''));
+  itemOptions.filter(function (opt) { return opt.dataset.order === orderSelect.value; }).forEach(function (opt) { itemSelect.add(opt); });
+  if (selectedOrder === orderSelect.value && Array.from(itemSelect.options).some(function (opt) { return opt.value === previous; })) itemSelect.value = previous;
+  itemSelect.disabled = !orderSelect.value;
 }
 orderSelect.addEventListener('change', filterItems);
 filterItems();

@@ -138,26 +138,23 @@ def core_fare(params: FareParams, distance_m: int | float) -> Decimal:
     return money(params.base_fare + mileage_fare(params, distance_m))
 
 
-def return_fee(params: FareParams, distance_m: int | float) -> Decimal:
-    """阶梯返空费：15–20 公里部分按里程运价 ×30%，20 公里以上部分 ×50%。"""
+def return_fee(cfg, params: FareParams, distance_m: int | float) -> Decimal:
+    """阶梯返空费：15–20 公里部分按里程运价 ×30%，20 公里以上部分 ×50%。
+
+    阈值与费率全部来自 config/attribution.yaml 的 shenyang_fare.return_fee 节（只读），
+    业务代码零硬编码。
+    """
+    tier_cfg = cfg.get_path("shenyang_fare.return_fee")
     d = float(distance_m)
-    tier = {
-        "tier1_from_m": 15000.0,
-        "tier1_to_m": 20000.0,
-        "tier1_rate": 0.30,
-        "tier2_from_m": 20000.0,
-        "tier2_rate": 0.50,
-    }
-    # 阈值可从配置覆盖
-    t1_from = float(tier["tier1_from_m"])
-    t1_to = float(tier["tier1_to_m"])
-    t2_from = float(tier["tier2_from_m"])
+    t1_from = float(tier_cfg["tier1_from_m"])
+    t1_to = float(tier_cfg["tier1_to_m"])
+    t2_from = float(tier_cfg["tier2_from_m"])
     tier1_m = max(0.0, min(d, t1_to) - t1_from)
     tier2_m = max(0.0, d - t2_from)
     rate = params.per_km
-    fee = (Decimal(str(tier1_m)) / Decimal(1000)) * rate * Decimal("0.30") + (
+    fee = (Decimal(str(tier1_m)) / Decimal(1000)) * rate * Decimal(str(tier_cfg["tier1_rate"])) + (
         Decimal(str(tier2_m)) / Decimal(1000)
-    ) * rate * Decimal("0.50")
+    ) * rate * Decimal(str(tier_cfg["tier2_rate"]))
     return money(fee)
 
 
@@ -171,27 +168,29 @@ def wait_fee(cfg, peak_seconds: float, offpeak_seconds: float) -> Decimal:
 
 # ---- 沈阳真实道路锚点（坐标为 OpenStreetMap 公开数据的近似值，用于合成演示轨迹）----
 ANCHORS: dict[str, tuple[float, float]] = {
-    "沈阳北站": (41.8066, 123.4328),
-    "市府广场": (41.8015, 123.4352),
-    "青年大街—市府大路": (41.7995, 123.4359),
-    "青年大街—十一纬路": (41.7940, 123.4359),
-    "青年大街—大西路": (41.7905, 123.4359),
-    "青年大街—文艺路": (41.7845, 123.4359),
-    "青年大街—文化路": (41.7780, 123.4359),
-    "青年大街—科普路": (41.7745, 123.4359),
-    "青年大街—文萃路": (41.7700, 123.4359),
-    "五里河": (41.7640, 123.4359),
+    "东北大学浑南校区": (41.6600, 123.4200),   # 全部种子订单的固定起点
+    "浑南中路—金阳大街": (41.6710, 123.4180),
+    "沈阳南站": (41.6880, 123.4140),
+    "浑南西路": (41.7200, 123.4280),
+    "浑河桥南": (41.7420, 123.4362),
     "南二环—青年大街": (41.7600, 123.4359),
     "浑河桥北": (41.7520, 123.4360),
-    "浑河桥南": (41.7420, 123.4362),
+    "五里河": (41.7640, 123.4359),
+    "青年大街—文萃路": (41.7700, 123.4359),
+    "青年大街—科普路": (41.7745, 123.4359),
+    "青年大街—文化路": (41.7780, 123.4359),
+    "青年大街—文艺路": (41.7845, 123.4359),
+    "青年大街—大西路": (41.7905, 123.4359),
+    "青年大街—十一纬路": (41.7940, 123.4359),
+    "青年大街—市府大路": (41.7995, 123.4359),
+    "市府广场": (41.8015, 123.4352),
+    "沈阳北站": (41.8066, 123.4328),
     "三好街—文化路": (41.7660, 123.4230),
     "三好街北口": (41.7760, 123.4230),
     "沈阳站": (41.7947, 123.3959),
     "中街·故宫": (41.7990, 123.4550),
     "北陵公园": (41.8280, 123.4290),
-    "浑南西路": (41.7200, 123.4280),
-    "沈阳南站": (41.6880, 123.4140),
     "苏家屯区中心": (41.6620, 123.4100),
 }
 
-MAP_CENTER = (41.80, 123.43)
+MAP_CENTER = (41.70, 123.43)

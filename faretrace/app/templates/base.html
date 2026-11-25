@@ -3,30 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}FareTrace 透明账单归因{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <meta name="theme-color" content="#183f39">
+  <title>{% block title %}明白出行 · 沈阳出租车透明账单{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261115">
+  <link rel="stylesheet" href="/static/readability.css?v=20261115-endpoints">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">
-    <span class="logo">FareTrace</span>
-    <span class="sub">沈阳出租车透明账单归因系统（课程演示 · 合成数据）</span>
-  </div>
-  <nav>
-    <a href="/orders" class="{{ 'active' if active == 'orders' else '' }}">订单列表</a>
-    <a href="/disputes/new" class="{{ 'active' if active == 'disputes' else '' }}">争议提交</a>
-    <a href="/docs" target="_blank">API 文档</a>
+  <a class="brand" href="/orders" aria-label="明白出行首页"><span class="brand-mark" aria-hidden="true">明</span><span><strong>明白出行<span class="brand-dot">.</span></strong><small>沈阳出租车 · 透明账单</small></span></a>
+  <nav aria-label="主导航">
+    <a href="/orders" class="{{ 'active' if active == 'orders' else '' }}" {% if active == 'orders' %}aria-current="page"{% endif %}>行程账本</a>
+    <a href="/disputes/new" class="{{ 'active' if active == 'disputes' else '' }}" {% if active == 'disputes' %}aria-current="page"{% endif %}>费用复核</a>
   </nav>
+  <span class="demo-label"><i></i>合成数据演示</span>
 </header>
-
-<main>
-{% block content %}{% endblock %}
-</main>
-
-<footer class="foot">
-  <span>所有订单、轨迹、账单均为模拟/合成数据，仅用于课程演示，不含真实用户信息。</span>
-  <span>配置版本 {{ config_version or 'cfg-1.0.0' }}</span>
-</footer>
+<main>{% block content %}{% endblock %}</main>
+<footer class="foot"><span class="footer-brand">明白每一笔费用，安心每一程。</span><span>所有行程与账单均为合成数据 · 不产生真实扣款</span><a href="/docs" target="_blank" rel="noopener">开发者接口文档 ↗</a></footer>
 {% block scripts %}{% endblock %}
 </body>
 </html>

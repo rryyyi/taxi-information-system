@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -22,10 +22,29 @@ class Base(DeclarativeBase):
     pass
 
 
+def _sqlite_speed_pragmas(dbapi_connection, _connection_record) -> None:
+    """连接级 SQLite 性能 pragma。
+
+    只影响崩溃耐久性相关的 I/O 行为（同步级别/日志落盘方式），
+    不改变任何查询结果；应用场景（演示、基准、测试）均使用
+    一次性临时库，reset_db() 可随时重建，牺牲崩溃耐久性无观察面。
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA synchronous=OFF")
+        cursor.execute("PRAGMA journal_mode=MEMORY")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+    finally:
+        cursor.close()
+
+
 def make_engine(url: str | None = None) -> Engine:
     resolved = url or database_url()
     connect_args = {"check_same_thread": False} if resolved.startswith("sqlite") else {}
-    return create_engine(resolved, echo=False, future=True, connect_args=connect_args)
+    eng = create_engine(resolved, echo=False, future=True, connect_args=connect_args)
+    if resolved.startswith("sqlite"):
+        event.listen(eng, "connect", _sqlite_speed_pragmas)
+    return eng
 
 
 engine: Engine = make_engine()

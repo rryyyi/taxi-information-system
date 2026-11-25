@@ -1,0 +1,10 @@
+{
+  "name": "faretrace",
+  "private": true,
+  "description": "FareTrace 沈阳出租车透明账单归因系统（课程演示，纯 Python/FastAPI）",
+  "scripts": {
+    "test": "python -m pytest -q",
+    "bench": "python scripts/bench_attribution.py 500",
+    "seed": "python seed.py"
+  }
+}

@@ -101,13 +101,13 @@ def test_ft_sy_1800_events_have_map_coordinates(seeded: Session) -> None:
     attribution = order.attribution
     for event in attribution.wait_events:
         assert 41.6 < event.lat < 41.9 and 123.3 < event.lng < 123.6
-        assert event.location.startswith("青年大街")
+        assert event.location in {"浑南中路—金阳大街", "沈阳南站", "浑南西路", "浑河桥南"}
         assert event.peak_label == "晚高峰"
         assert float(event.peak_seconds) == pytest.approx(180, abs=1)
         assert "等候费" in event.evidence_json["formula"]
     event = attribution.detour_events[0]
-    assert event.entry_name == "青年大街—文艺路"
-    assert event.exit_name == "青年大街—科普路"
+    assert event.entry_name == "浑南西路"
+    assert event.exit_name == "浑河桥南"
     assert len(event.path_json) >= 2
     assert event.evidence_json["per_km_rate"] == "2.00"
 
@@ -163,7 +163,7 @@ def test_low_fit_order_produces_detour_event(seeded: Session) -> None:
 # --------------------------------------------------------------------------- #
 def test_return_fee_triggered_over_15km(seeded: Session) -> None:
     """沈阳北站 → 苏家屯 >15 公里：返空费按阶梯规则单独归因。"""
-    order = _order(seeded, "SY-1006")
+    order = _order(seeded, "SY-1006")  # 校园 → 北陵公园，全程 >15 公里
     amounts = _amounts(order.attribution)
     assert int(order.bill.actual_distance_m) > 15000
     assert amounts["RETURN_FEE"] > Decimal("0.00")

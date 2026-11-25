@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -16,13 +15,13 @@ from app.errors import AppError
 from app.models import Attribution, Dispute, Order
 from app.services import disputes as dispute_service
 from app.services import ingest
+from app.services.presentation import chinese, readable_items
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 router = APIRouter(include_in_schema=False)
 
 
-def _pretty(value) -> str:
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+TEMPLATES.env.filters["chinese"] = chinese
 
 
 @router.get("/", include_in_schema=False)
@@ -46,12 +45,17 @@ def orders_page(request: Request, session: Session = Depends(get_session)):
                 "delta": f"{attribution.total_delta:.2f}" if attribution else "-",
                 "residual": f"{attribution.residual:.2f}" if attribution else "-",
                 "fit": f"{float(attribution.fit_score):.2f}" if attribution and attribution.fit_score is not None else "-",
-                "quality": attribution.data_quality if attribution else "-",
-                "status": attribution.status if attribution else order.status,
+                "quality": chinese(attribution.data_quality) if attribution else "等待行程结束",
+                "status": chinese(attribution.status if attribution else order.status),
+                "review": bool(attribution and attribution.residual != 0),
+                "date": order.requested_at.strftime("%m月%d日 %H:%M") if order.requested_at else "",
+                "complete": bool(attribution and attribution.data_quality == "COMPLETE"),
             }
         )
     return TEMPLATES.TemplateResponse(
-        request, "orders.html", {"active": "orders", "rows": rows}
+        request, "orders.html", {"active": "orders", "rows": rows,
+            "stats": {"total": len(rows), "review": sum(r["review"] for r in rows),
+                      "complete": sum(r["complete"] for r in rows)}}
     )
 
 
@@ -65,11 +69,8 @@ def bill_page(request: Request, order_no: str, session: Session = Depends(get_se
         tb = attribution.transparent_bill
         views = {"passenger": tb.passenger_view_json, "driver": tb.driver_view_json}
 
-    # 证据展开用的预格式化 JSON
-    evidence = {}
-    if attribution:
-        for item in attribution.items:
-            evidence[item.code] = _pretty(item.evidence_json)
+    # 页面只整理同一份已保存证据，金额计算仍由归因服务负责。
+    calculations = readable_items(attribution) if attribution else []
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -80,8 +81,9 @@ def bill_page(request: Request, order_no: str, session: Session = Depends(get_se
             "attribution": attribution,
             "views": views,
             "items": attribution.items if attribution else [],
-            "evidence": evidence,
-            "evidence_bundle": _pretty(attribution.evidence_bundle_json) if attribution else "",
+            "calculations": calculations,
+            "start_point": order.reference_route.polyline_json[0] if order.reference_route and order.reference_route.polyline_json else None,
+            "end_point": order.reference_route.polyline_json[-1] if order.reference_route and order.reference_route.polyline_json else None,
             "quality_flags": list(attribution.quality_flags_json or []) if attribution else [],
             "dispute_created": request.query_params.get("dispute"),
         },
@@ -186,6 +188,8 @@ def submit_dispute_form(
                 "preselected_item": item_code,
                 "disputes": [],
                 "error": exc.message,
+                "reason": reason,
+                "selected_role": initiator_role,
             },
             status_code=400,
         )

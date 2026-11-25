@@ -49,7 +49,7 @@ shenyang_fare:
 # ---- 低速等候事件识别 ----
 low_speed:
   speed_threshold_kmh: 12.0     # 时速低于 12 km/h 计为低速等候
-  min_wait_seconds: 20          # 连续低速段最短秒数（过滤采样噪声）
+  min_wait_seconds: 60          # 连续低速段最短秒数（沈阳场景等候时长 60—180 秒，过滤采样噪声）
   min_moving_speed_mps: 0.3     # 低于该速度（m/s）视为停驶/蠕行
 
 # ---- 轨迹预处理 ----
@@ -68,7 +68,7 @@ residual:
 
 # ---- 地图 ----
 map:
-  center: [41.80, 123.43]
+  center: [41.70, 123.43]
   zoom: 12
   tile_url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
   attribution: "© OpenStreetMap contributors"

@@ -1,0 +1,147 @@
+/* 加大中文阅读字号，同时保留标题、正文、辅助文字之间的层级。 */
+body { font-size: 17px; }
+nav a, .button, .tab, .form label { font-size: 16px; }
+h2, .section-heading h2 { font-size: 26px; }
+h3, .journey-link, .fee-title { font-size: 19px; }
+.hint, .eyebrow, .demo-label, .badge, .cell-note,
+.brand small, .overview small, .money small, .fee-title small,
+.expand-label, .rule-label, .card > span, .card small,
+.facts dt, .foot, .guide-note, .form > p,
+.demo-note p small, .page-heading small, .back-link { font-size: 14px; }
+.eyebrow { letter-spacing: 2px; }
+.hero p, .overview > span:not(.seal), .overview-note p,
+.demo-note p, .text-link, .banner, .receipt-note,
+.fare-flow > div > span, .fare-flow b small, .fee-amount small,
+.rule-box p, .event-top h3, .calculation-steps h3,
+.calculation-steps ol, .map-legend, .map-notice,
+.map-panel > .hint, .map-fallback p, .audit-panel p,
+.audit-panel .hint, .audit-details, .facts dd,
+.process-list p, .empty-state p { font-size: 16px; }
+table, .form select, .form textarea, .form input,
+.calculation, .process-list b, .empty-state strong { font-size: 17px; }
+.calculation { padding: 14px 18px; }
+.calculation-steps ol { line-height: 2; }
+.rule-box { gap: 18px; }
+.rule-box p { line-height: 1.9; }
+.rule-label { line-height: 1.9; }
+.fee-title small { margin-top: 5px; }
+.fee-amount { font-size: 28px; }
+.money { font-size: 23px; }
+.paid { font-size: 20px; }
+.overview > b { font-size: 34px; }
+.fare-flow b { font-size: 40px; }
+.footer-brand { font-size: 17px; }
+.form label { gap: 10px; }
+.form .hint { font-size: 14px; }
+th, td { padding: 19px 18px; }
+.journey-link { white-space: normal; min-width: 100px; }
+.art-caption, .art-ticket small, .art-ticket i { font-size: 13px; }
+.art-ticket { width: 255px; }
+.leaflet-popup-content { font-size: 16px; line-height: 1.9; }
+.leaflet-control-attribution { font-size: 12px; }
+
+/* 起终点图钉与永久地名标签，位置锚定在图钉尖端。 */
+.journey-endpoint-icon { background: transparent; border: 0; filter: drop-shadow(0 3px 3px #183f3940); }
+.journey-endpoint-icon svg { display: block; overflow: visible; }
+.leaflet-tooltip.endpoint-label {
+  background: #fffefaf5; color: var(--ink); border: 1px solid #b8cdbb;
+  border-radius: 6px; padding: 8px 12px; box-shadow: 0 3px 12px #183f3920;
+  font: 15px/1.5 "Microsoft YaHei", sans-serif; text-align: center;
+  max-width: 210px; white-space: normal; width: max-content;
+}
+.endpoint-label strong { display: block; color: #216457; font-size: 14px; }
+.endpoint-label span { display: block; font-weight: 600; }
+.endpoint-label-end strong { color: #b85c3e; }
+.endpoint-legend { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: white; font: 700 13px/1 sans-serif; font-style: normal; }
+.endpoint-legend.start { background: #216457; }
+.endpoint-legend.end { background: #b85c3e; }
+@media (max-width: 680px) {
+  .leaflet-tooltip.endpoint-label { font-size: 14px; max-width: 170px; padding: 6px 9px; }
+}
+
+/* 地图是账单的第一个展示区，首屏优先留给路线与费用事件。 */
+.bill-page-heading { padding: 8px 0 18px; }
+.bill-page-heading h1 { font-size: 32px; margin-bottom: 6px; }
+.bill-page-heading p { font-size: 17px; margin-bottom: 4px; }
+.bill-page-heading .eyebrow { margin-bottom: 4px; }
+.bill-page-heading .paper-stamp { font-size: 16px; padding: 8px 12px; }
+.map-spotlight {
+  padding: 24px;
+  border: 1px solid #b8cdbb;
+  border-top: 4px solid var(--brand);
+  border-radius: 10px;
+  box-shadow: 0 14px 45px #183f3910;
+  margin-bottom: 30px;
+}
+.map-spotlight .section-heading { align-items: center; margin-bottom: 18px; }
+.map-spotlight .map {
+  height: clamp(460px, 60vh, 760px);
+  border: 1px solid #c7d5c4;
+  border-radius: 7px;
+}
+.map-spotlight .map-stage { position: relative; }
+.map-actions { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.map-reset { color: var(--brand); background: #edf2e9; border-color: #cbd8c4; }
+.map-reset:hover { background: #e1eadb; }
+.map-reset:disabled { cursor: default; opacity: .5; transform: none; }
+.map-caption { display: flex; gap: 16px; justify-content: space-between; margin-top: 16px; color: var(--muted); font-size: 15px; }
+.map-caption p { margin: 0; }
+.map-caption > span { color: var(--brand); white-space: nowrap; }
+.map-spotlight .map-legend { gap: 24px; }
+.map-spotlight .legend-line { width: 32px; }
+.map-spotlight .legend-dot { width: 11px; height: 11px; }
+.map-spotlight .leaflet-control-zoom a { width: 38px; height: 38px; line-height: 38px; }
+
+@media (max-width: 1000px) {
+  .map-spotlight .section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .overview { padding: 20px; }
+  .fare-flow b { font-size: 34px; }
+  .foot { font-size: 14px; flex-wrap: wrap; }
+}
+@media (max-width: 680px) {
+  body { font-size: 16px; }
+  .brand strong { font-size: 20px; }
+  .brand small { font-size: 12px; letter-spacing: 1px; }
+  nav a { font-size: 15px; }
+  h2, .section-heading h2 { font-size: 23px; }
+  .hero p { font-size: 16px; }
+  .hero-copy { padding: 26px 22px; }
+  .hero h1 { font-size: 29px; }
+  .overview { padding: 15px 10px; }
+  .overview > span:not(.seal) { font-size: 13px; }
+  .overview > b { font-size: 29px; }
+  .receipt { padding: 20px; }
+  .fare-flow b { font-size: 31px; }
+  .fare-flow > div > span, .receipt-note { font-size: 15px; }
+  .fee-title { font-size: 17px; }
+  .fee-title small { font-size: 13px; }
+  .fee-amount { font-size: 24px; }
+  .fee-amount small { font-size: 13px; }
+  .expand-label { font-size: 0; }
+  .fee-item summary { gap: 8px; padding: 16px 12px; }
+  .fee-icon { font-size: 18px; min-width: 22px; }
+  .fee-body { padding: 17px; }
+  .calculation { font-size: 16px; padding: 12px; }
+  .calculation-steps ol, .rule-box p, .event-top h3 { font-size: 16px; }
+  .facts dt { font-size: 13px; }
+  .facts dd { font-size: 15px; }
+  .journeys-table td:nth-child(2):before,
+  .journeys-table td:nth-child(3):before,
+  .journeys-table td:nth-child(4),
+  .journeys-table td:nth-child(6),
+  .journeys-table .round-link:before { font-size: 14px; }
+  .cell-note { font-size: 14px; }
+  .map-spotlight { padding: 16px; margin-bottom: 24px; }
+  .map-spotlight .map { height: clamp(400px, 62vh, 580px); }
+  .map-spotlight .eyebrow { font-size: 13px; }
+  .map-spotlight h2 { font-size: 24px; }
+  .map-spotlight .map-legend { font-size: 14px; gap: 12px 18px; }
+  .map-actions { gap: 15px; }
+  .map-reset { padding: 9px 12px; font-size: 15px; }
+  .map-actions .text-link { font-size: 15px; }
+  .map-caption { flex-direction: column; gap: 8px; font-size: 14px; }
+  .bill-page-heading h1 { font-size: 28px; }
+  .bill-page-heading p { font-size: 16px; }
+  .bill-page-heading small { font-size: 13px; }
+  .map-panel > .hint { font-size: 14px; }
+}

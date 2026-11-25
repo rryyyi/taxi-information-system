@@ -180,7 +180,11 @@ def _clean_points(raw: list[RawPoint], cfg, flags: list[str]) -> list[CleanPoint
     ]
 
 
-def _build_segments(points: list[CleanPoint], reference_polyline) -> list[Segment]:
+def _build_segments(
+    points: list[CleanPoint],
+    reference_polyline,
+    index: "geo.PolylineIndex | None" = None,
+) -> list[Segment]:
     segments: list[Segment] = []
     for i in range(len(points) - 1):
         a, b = points[i], points[i + 1]
@@ -191,9 +195,9 @@ def _build_segments(points: list[CleanPoint], reference_polyline) -> list[Segmen
         speed = dist / dt
         along_a = along_b = None
         dev_a = dev_b = None
-        if geo.is_valid_polyline(reference_polyline):
-            pa = geo.project_to_polyline((a.lat, a.lng), reference_polyline)
-            pb = geo.project_to_polyline((b.lat, b.lng), reference_polyline)
+        if index is not None:
+            pa = index.project((a.lat, a.lng))
+            pb = index.project((b.lat, b.lng))
             if pa and pb:
                 along_a, along_b = pa.along_m, pb.along_m
                 dev_a, dev_b = pa.distance_m, pb.distance_m
@@ -216,15 +220,19 @@ def _build_segments(points: list[CleanPoint], reference_polyline) -> list[Segmen
 
 
 def _compute_fit(
-    points: list[CleanPoint], reference_polyline, cfg, flags: list[str]
+    points: list[CleanPoint],
+    reference_polyline,
+    cfg,
+    flags: list[str],
+    index: "geo.PolylineIndex | None" = None,
 ) -> tuple[float | None, float | None, float | None]:
     traj_cfg = cfg.section("trajectory")
-    if not geo.is_valid_polyline(reference_polyline):
-        flags.append("REFERENCE_ROUTE_MISSING")
+    if index is None:
+        # 参考路径缺失或退化：无法计算拟合度（preprocess 已标记 MISSING）
         return None, None, None
     deviations: list[float] = []
     for p in points:
-        proj = geo.project_to_polyline((p.lat, p.lng), reference_polyline)
+        proj = index.project((p.lat, p.lng))
         if proj is None:
             flags.append("REFERENCE_ROUTE_DEGRADED")
             return None, None, None
@@ -347,7 +355,17 @@ def preprocess(raw_points: list[RawPoint], cfg, reference_polyline=None) -> Traj
 
     trajectory.points = points
 
-    segments = _build_segments(points, reference_polyline)
+    # 参考折线索引只构建一次，供段构建与拟合度计算复用（行为不变）
+    index: geo.PolylineIndex | None = None
+    if geo.is_valid_polyline(reference_polyline):
+        try:
+            index = geo.PolylineIndex(reference_polyline)
+        except ValueError:
+            index = None
+    if index is None:
+        flags.append("REFERENCE_ROUTE_MISSING")
+
+    segments = _build_segments(points, reference_polyline, index)
     if not segments:
         flags.append("TRAJECTORY_NO_SEGMENT")
         trajectory.flags = flags
@@ -366,7 +384,7 @@ def preprocess(raw_points: list[RawPoint], cfg, reference_polyline=None) -> Traj
     trajectory.distance_m = sum(s.dist_m for s in segments)
     trajectory.duration_s = (points[-1].ts - points[0].ts).total_seconds()
 
-    fit, avg_dev, max_dev = _compute_fit(points, reference_polyline, cfg, flags)
+    fit, avg_dev, max_dev = _compute_fit(points, reference_polyline, cfg, flags, index)
     trajectory.fit_score, trajectory.avg_deviation_m, trajectory.max_deviation_m = fit, avg_dev, max_dev
 
     wait_spans, total_low, deviations = find_spans(segments, points, cfg)

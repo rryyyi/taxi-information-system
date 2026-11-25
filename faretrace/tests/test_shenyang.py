@@ -62,10 +62,10 @@ def test_core_fare_day(cfg) -> None:
 
 def test_return_fee_tiers(cfg) -> None:
     p = shenyang.params_for(cfg, "SY-DAY")
-    assert shenyang.return_fee(p, 15000) == Decimal("0.00")      # 未超 15 公里
-    assert shenyang.return_fee(p, 16000) == Decimal("0.60")      # 1km × 2元 × 30%
-    assert shenyang.return_fee(p, 20000) == Decimal("3.00")      # 5km × 2 × 0.3
-    assert shenyang.return_fee(p, 22000) == Decimal("5.00")      # 5km×2×0.3 + 2km×2×0.5
+    assert shenyang.return_fee(cfg, p, 15000) == Decimal("0.00")      # 未超 15 公里
+    assert shenyang.return_fee(cfg, p, 16000) == Decimal("0.60")      # 1km × 2元 × 30%
+    assert shenyang.return_fee(cfg, p, 20000) == Decimal("3.00")      # 5km × 2 × 0.3
+    assert shenyang.return_fee(cfg, p, 22000) == Decimal("5.00")      # 5km×2×0.3 + 2km×2×0.5
 
 
 def test_wait_fee_peak_and_offpeak(cfg) -> None:

@@ -54,6 +54,54 @@ def _local_xy(lat: float, lng: float, origin_lat: float, origin_lng: float, cos_
     return x, y
 
 
+class PolylineIndex:
+    """参考折线的可复用投影索引：一次构建，多次投影。
+
+    归因时同一参考折线会被每个轨迹点投影一次；缓存 LineString 与局部平面
+    常量可避免逐点重建（行为不变，仅消除重复计算）。
+    """
+
+    def __init__(self, points: list[list[float]] | list[tuple[float, float]]):
+        if not is_valid_polyline(points):
+            raise ValueError("PolylineIndex 需要至少两个非退化点")
+        self.points = points
+        self.origin_lat = float(points[0][0])
+        self.origin_lng = float(points[0][1])
+        self.cos_lat = math.cos(math.radians(self.origin_lat))
+        coords = [_local_xy(p[0], p[1], self.origin_lat, self.origin_lng, self.cos_lat) for p in points]
+        self.line = LineString(coords)
+        self.local_len = self.line.length
+        self.spherical_len = polyline_length_m(points)
+
+    def project(
+        self, point: tuple[float, float], with_segment: bool = False
+    ) -> Projection | None:
+        """单点投影；with_segment=False 时跳过纯信息性的线段定位扫描。"""
+        if self.local_len <= 0:
+            return None
+        p = Point(*_local_xy(point[0], point[1], self.origin_lat, self.origin_lng, self.cos_lat))
+        target = self.line.project(p)
+        projected = self.line.interpolate(target)
+        distance = p.distance(projected)
+        fraction = max(0.0, min(1.0, target / self.local_len))
+        along = fraction * self.spherical_len
+
+        seg_index, seg_t = 0, 0.0
+        if with_segment:
+            coords = list(self.line.coords)
+            cum = 0.0
+            for i in range(len(coords) - 1):
+                seg_len = math.dist(coords[i], coords[i + 1])
+                if seg_len <= 0:
+                    continue
+                if cum + seg_len >= target or i == len(coords) - 2:
+                    seg_index = i
+                    seg_t = 0.0 if seg_len <= 0 else max(0.0, min(1.0, (target - cum) / seg_len))
+                    break
+                cum += seg_len
+        return Projection(along_m=along, distance_m=distance, segment_index=seg_index, t=seg_t)
+
+
 @dataclass(frozen=True)
 class Projection:
     along_m: float          # 从参考路径起点到投影点的累计里程（米，球面）
@@ -74,36 +122,14 @@ def project_to_polyline(
     point: tuple[float, float],
     points: list[list[float]] | list[tuple[float, float]],
 ) -> Projection | None:
-    """轨迹点投影到参考折线；折线退化时返回 None。"""
+    """轨迹点投影到参考折线；折线退化时返回 None。
+
+    兼容入口：每次调用重建索引；热路径请改用 PolylineIndex.project()。
+    """
     if not is_valid_polyline(points):
         return None
-    line, spherical_len = build_line(points)
-    local_len = line.length
-    if local_len <= 0:
-        return None
-    origin_lat, origin_lng = points[0][0], points[0][1]
-    cos_lat = math.cos(math.radians(origin_lat))
-    p = Point(*_local_xy(point[0], point[1], origin_lat, origin_lng, cos_lat))
-    target = line.project(p)
-    projected = line.interpolate(target)
-    distance = p.distance(projected)
-    fraction = max(0.0, min(1.0, target / local_len))
-    along = fraction * spherical_len
-
-    # 通过局部长度定位所在线段与线段内比例
-    coords = list(line.coords)
-    cum = 0.0
-    seg_index, seg_t = 0, 0.0
-    for i in range(len(coords) - 1):
-        seg_len = math.dist(coords[i], coords[i + 1])
-        if seg_len <= 0:
-            continue
-        if cum + seg_len >= target or i == len(coords) - 2:
-            seg_index = i
-            seg_t = 0.0 if seg_len <= 0 else max(0.0, min(1.0, (target - cum) / seg_len))
-            break
-        cum += seg_len
-    return Projection(along_m=along, distance_m=distance, segment_index=seg_index, t=seg_t)
+    index = PolylineIndex(points)
+    return index.project(point, with_segment=True)
 
 
 def interpolate_along(
